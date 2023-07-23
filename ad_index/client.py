@@ -1,8 +1,12 @@
+import io
+import os
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional, Sequence
 
+from PIL import Image
 from selenium import webdriver
 from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.common.by import By
@@ -29,17 +33,8 @@ class Client:
     def __init__(self):
         self.driver = webdriver.Firefox()
 
-    def setup(self):
-        self.driver.get(START_PAGE)
-        for x in self.driver.find_elements(by=By.TAG_NAME, value="button"):
-            if x.get_attribute("title").strip() == "Allow all cookies":
-                x.click()
-                break
-        self._click_div("Ad category")
-        self._click_div("All ads")
-
     def query(self, text: str):
-        self.setup()
+        self._setup()
         elem = self.driver.find_element(
             by=By.CSS_SELECTOR,
             value="input[placeholder='Search by keyword or advertiser']",
@@ -52,6 +47,47 @@ class Client:
                 return results
             time.sleep(2**i)
         raise ResultParseError("could not extract search results")
+
+    def screenshot_ids(self, ids: Sequence[str]) -> Dict[str, Image.Image]:
+        main_elem_query = (
+            "//*["
+            + " or ".join(f"text()='ID: {id}'" for id in ids)
+            + "]/../../../../../../.."
+        )
+        img_query = main_elem_query + "//img"
+        complete = True
+        for i in range(RETRIES):
+            complete = True
+            for x in self.driver.find_elements(by=By.XPATH, value=img_query):
+                if not x.get_attribute("complete"):
+                    complete = False
+                    break
+            if complete:
+                break
+            time.sleep(2**i)
+        if not complete:
+            raise ResultParseError("images never finished loading")
+
+        images = {}
+        for main_elem in self.driver.find_elements(by=By.XPATH, value=main_elem_query):
+            id_item = main_elem.find_element(
+                by=By.XPATH, value="//*[starts-with(text(), 'ID: ')]"
+            )
+            id = id_item.text.split(" ")[1]
+            content = main_elem.find_element(
+                by=By.XPATH, value="hr/following-sibling::*"
+            )
+            images[id] = Image.open(io.BytesIO(content.screenshot_as_png))
+        return images
+
+    def _setup(self):
+        self.driver.get(START_PAGE)
+        for x in self.driver.find_elements(by=By.TAG_NAME, value="button"):
+            if x.get_attribute("title").strip() == "Allow all cookies":
+                x.click()
+                break
+        self._click_div("Ad category")
+        self._click_div("All ads")
 
     def _click_div(self, content: str):
         for i in range(RETRIES):
@@ -108,7 +144,13 @@ class Client:
         else:
             return None
 
+    def __del__(self):
+        self.driver.close()
+
 
 if __name__ == "__main__":
     c = Client()
-    print(c.query("lilly pulitzer"))
+    results = c.query("lilly pulitzer")
+    print(len(results), results[0])
+    img = c.screenshot_ids([results[0].id])[results[0].id]
+    img.save("ad.png")
