@@ -1,9 +1,12 @@
+import asyncio
 import io
 import os
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from typing import Dict, List, Optional, Sequence
 
 from PIL import Image
@@ -31,9 +34,15 @@ class ResultParseError(Exception):
 
 class Client:
     def __init__(self):
+        self.executor = ThreadPoolExecutor(1)
         self.driver = webdriver.Firefox()
 
-    def query(self, text: str):
+    async def query(self, text: str) -> List[SearchResult]:
+        return await asyncio.get_running_loop().run_in_executor(
+            self.executor, partial(self._query, text)
+        )
+
+    def _query(self, text: str) -> List[SearchResult]:
         self._setup()
         elem = self.driver.find_element(
             by=By.CSS_SELECTOR,
@@ -48,7 +57,12 @@ class Client:
             time.sleep(2**i)
         raise ResultParseError("could not extract search results")
 
-    def screenshot_ids(self, ids: Sequence[str]) -> Dict[str, Image.Image]:
+    async def screenshot_ids(self, ids: Sequence[str]) -> Dict[str, Image.Image]:
+        return await asyncio.get_running_loop().run_in_executor(
+            self.executor, partial(self._screenshot_ids, ids)
+        )
+
+    def _screenshot_ids(self, ids: Sequence[str]) -> Dict[str, Image.Image]:
         main_elem_query = (
             "//*["
             + " or ".join(f"text()='ID: {id}'" for id in ids)
@@ -145,12 +159,17 @@ class Client:
             return None
 
     def __del__(self):
+        self.executor.shutdown()
         self.driver.close()
 
 
-if __name__ == "__main__":
+async def main():
     c = Client()
-    results = c.query("lilly pulitzer")
+    results = await c.query("lilly pulitzer")
     print(len(results), results[0])
-    img = c.screenshot_ids([results[0].id])[results[0].id]
+    img = (await c.screenshot_ids([results[0].id]))[results[0].id]
     img.save("ad.png")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
