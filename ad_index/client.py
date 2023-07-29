@@ -1,9 +1,8 @@
 import asyncio
 import io
-import os
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
@@ -14,6 +13,7 @@ from selenium import webdriver
 from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.remote.webdriver import WebDriver
 
 START_PAGE = "https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=US&sort_data[direction]=desc&sort_data[mode]=relevancy_monthly_grouped&media_type=all"
 RETRIES = 5
@@ -33,9 +33,19 @@ class ResultParseError(Exception):
 
 
 class Client:
-    def __init__(self):
+    def __init__(self, driver: WebDriver):
         self.executor = ThreadPoolExecutor(1)
-        self.driver = webdriver.Firefox()
+        self.driver = driver
+
+    @classmethod
+    @asynccontextmanager
+    async def create(cls) -> "Client":
+        driver = webdriver.Firefox()
+        client = Client(driver)
+        try:
+            yield client
+        finally:
+            client.close()
 
     async def query(self, text: str) -> List[SearchResult]:
         return await asyncio.get_running_loop().run_in_executor(
@@ -158,17 +168,17 @@ class Client:
         else:
             return None
 
-    def __del__(self):
+    def close(self):
         self.executor.shutdown()
         self.driver.close()
 
 
 async def main():
-    c = Client()
-    results = await c.query("lilly pulitzer")
-    print(len(results), results[0])
-    img = (await c.screenshot_ids([results[0].id]))[results[0].id]
-    img.save("ad.png")
+    async with Client.create() as c:
+        results = await c.query("lilly pulitzer")
+        print(len(results), results[0])
+        img = (await c.screenshot_ids([results[0].id]))[results[0].id]
+        img.save("ad.png")
 
 
 if __name__ == "__main__":
