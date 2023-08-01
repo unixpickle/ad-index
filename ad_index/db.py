@@ -1,10 +1,14 @@
 import asyncio
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from functools import partial
+from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar
 
 import aiosqlite
+
+R = TypeVar("R")
 
 
 @dataclass
@@ -57,32 +61,61 @@ class DB:
             );
             """
         )
+        await self._conn.commit()
 
     async def ad_queries(self) -> Iterator[AdQuery]:
-        async for row in await self._conn.execute(
-            "SELECT ad_query_id, nickname, query, filters FROM ad_queries"
-        ):
-            yield AdQuery(
-                ad_query_id=row[0],
-                nickname=row[1],
-                query=row[2],
-                filters=json.loads(row[3]),
+        async with await self._retry(
+            partial(
+                self._conn.execute,
+                "SELECT ad_query_id, nickname, query, filters FROM ad_queries",
             )
+        ) as results:
+            async for row in results:
+                yield AdQuery(
+                    ad_query_id=row[0],
+                    nickname=row[1],
+                    query=row[2],
+                    filters=json.loads(row[3]),
+                )
 
     async def insert_ad_query(self, q: AdQuery) -> int:
-        return await self._conn.execute_insert(
-            "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
-            (q.nickname, q.query, json.dumps(q.filters)),
+        result = await self._retry(
+            partial(
+                self._conn.execute_insert,
+                "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
+                (q.nickname, q.query, json.dumps(q.filters)),
+            )
         )
+        await self._retry(self._conn.commit)
+        return result
 
     async def update_ad_query(self, q: AdQuery):
-        await self._conn.execute(
-            "REPLACE INTO ad_queries (ad_query_id, nickname, query, filters) VALUES (?, ?, ?)",
-            (q.ad_query_id, q.nickname, q.query, json.dumps(q.filters)),
+        await self._retry(
+            partial(
+                self._conn.execute,
+                "REPLACE INTO ad_queries (ad_query_id, nickname, query, filters) VALUES (?, ?, ?)",
+                (q.ad_query_id, q.nickname, q.query, json.dumps(q.filters)),
+            )
         )
+        await self._retry(self._conn.commit)
 
     async def delete_ad_query(self, id: int):
-        await self._conn.execute("DELETE FROM ad_queries WHERE ad_query_id=?", id)
+        await self._retry(
+            partial(
+                self._conn.execute, "DELETE FROM ad_queries WHERE ad_query_id=?", id
+            )
+        )
+        await self._retry(self._conn.commit)
+
+    async def _retry(self, fn: Callable[[], Awaitable[R]]) -> R:
+        while True:
+            try:
+                return await fn()
+            except sqlite3.OperationalError as exc:
+                if "database is locked" in str(exc):
+                    await asyncio.sleep(0.01)
+                else:
+                    raise
 
 
 async def main():
