@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "lib": [
+            "es2019",
+            "dom"
+        ],
+        "noImplicitAny": true,
+        "removeComments": true,
+        "preserveConstEnums": true,
+        "sourceMap": true,
+    },
+    "include": [
+        "ad_index/assets/js/*.ts",
+    ],
+}

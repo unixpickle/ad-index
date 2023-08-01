@@ -1,0 +1,11 @@
+{
+    "short_name": "Ad Index",
+    "name": "Ad Index",
+    "description": "Watch new Meta ads with keywords",
+    "version": "0.1",
+    "background_color": "#65bcd4",
+    "theme_color": "#65bcd4",
+    "orientation": "portrait",
+    "start_url": "/",
+    "gcm_sender_id": "103953800507"
+}

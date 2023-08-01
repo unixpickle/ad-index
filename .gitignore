@@ -2,3 +2,5 @@ __pycache__
 *.egg-info
 *.log
 ad_index.db
+*.js
+*.js.map
