@@ -1,10 +1,11 @@
 import asyncio
+import hashlib
 import json
 import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar
+from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
 
 import aiosqlite
 
@@ -22,6 +23,7 @@ class AdQuery:
 class DB:
     def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn
+        self._lock = asyncio.Lock()
 
     @classmethod
     @asynccontextmanager
@@ -35,7 +37,7 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ad_queries (
-                ad_query_id  INTEGER  PRIMARY KEY,
+                ad_query_id  INTEGER  PRIMARY KEY AUTOINCREMENT,
                 nickname     TEXT     NOT NULL,
                 query        TEXT     NOT NULL,
                 filters      TEXT     NOT NULL
@@ -45,10 +47,12 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS clients (
-                client_id   INTEGER  PRIMARY KEY,
-                vapid_pub   BLOB     NOT NULL,
-                vapid_priv  BLOB     NOT NULL,
-                push_sub    TEXT
+                client_id     INTEGER   PRIMARY KEY AUTOINCREMENT,
+                vapid_pub     BLOB      NOT NULL,
+                vapid_priv    BLOB      NOT NULL,
+                session_id    CHAR(64)  NOT NULL,
+                session_hash  CHAR(64)  NOT NULL,
+                push_sub      TEXT
             )
             """
         )
@@ -61,48 +65,73 @@ class DB:
             );
             """
         )
+        await self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS clients_session_hash ON clients(session_hash)
+            """
+        )
         await self._conn.commit()
 
     async def ad_queries(self) -> Iterator[AdQuery]:
-        async with await self._retry(
-            partial(
-                self._conn.execute,
-                "SELECT ad_query_id, nickname, query, filters FROM ad_queries",
-            )
-        ) as results:
-            async for row in results:
-                yield AdQuery(
-                    ad_query_id=row[0],
-                    nickname=row[1],
-                    query=row[2],
-                    filters=json.loads(row[3]),
+        async with self._lock:
+            async with await self._retry(
+                partial(
+                    self._conn.execute,
+                    "SELECT ad_query_id, nickname, query, filters FROM ad_queries",
                 )
+            ) as results:
+                async for row in results:
+                    yield AdQuery(
+                        ad_query_id=row[0],
+                        nickname=row[1],
+                        query=row[2],
+                        filters=json.loads(row[3]),
+                    )
 
     async def insert_ad_query(self, q: AdQuery) -> int:
-        result = await self._retry(
-            partial(
-                self._conn.execute_insert,
-                "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
-                (q.nickname, q.query, json.dumps(q.filters)),
+        async with self._lock:
+            result = await self._retry(
+                partial(
+                    self._conn.execute_insert,
+                    "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
+                    (q.nickname, q.query, json.dumps(q.filters)),
+                )
             )
-        )
-        await self._retry(self._conn.commit)
-        return result
+            await self._retry(self._conn.commit)
+            return result
 
     async def update_ad_query(self, q: AdQuery):
-        await self._retry(
-            partial(
-                self._conn.execute,
+        async with self._lock:
+            await self._retry_execute(
                 "REPLACE INTO ad_queries (ad_query_id, nickname, query, filters) VALUES (?, ?, ?)",
                 (q.ad_query_id, q.nickname, q.query, json.dumps(q.filters)),
             )
-        )
-        await self._retry(self._conn.commit)
 
     async def delete_ad_query(self, id: int):
+        async with self._lock:
+            await self._retry_execute_commit(
+                "DELETE FROM ad_queries WHERE ad_query_id=?", id
+            )
+
+    async def create_session(
+        self, vapid_pub: bytes, vapid_priv: bytes, session_id: str
+    ):
+        async with self._lock:
+            hash = hash_session_id(session_id)
+            await self._retry(
+                partial(
+                    self._conn.execute,
+                    "INSERT INTO clients (vapid_pub, vapid_priv, session_id, session_hash) VALUES (?, ?, ?, ?)",
+                    (vapid_pub, vapid_priv, session_id, hash),
+                )
+            )
+            await self._retry(self._conn.commit)
+
+    async def _retry_execute_commit(self, *args):
         await self._retry(
             partial(
-                self._conn.execute, "DELETE FROM ad_queries WHERE ad_query_id=?", id
+                self._conn.execute,
+                *args,
             )
         )
         await self._retry(self._conn.commit)
@@ -116,6 +145,12 @@ class DB:
                     await asyncio.sleep(0.01)
                 else:
                     raise
+
+
+def hash_session_id(session_id: Union[str, bytes]) -> str:
+    h = hashlib.new("sha256")
+    h.update(bytes(session_id, "utf-8") if isinstance(session_id, str) else session_id)
+    return h.hexdigest()
 
 
 async def main():

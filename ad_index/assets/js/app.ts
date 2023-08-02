@@ -28,12 +28,45 @@ class App {
     async toggleNotifications() {
         console.log('attempting to subscribe to notifications');
         try {
-            const sub = await this.registration.pushManager.subscribe({ userVisibleOnly: true });
+            let vapidPub = localStorage.getItem('vapidPub');
+            if (!vapidPub) {
+                const session = await createSession();
+                localStorage.setItem('vapidPub', session.vapidPub);
+                localStorage.setItem('sessionId', session.sessionId);
+                vapidPub = session.vapidPub;
+            }
+            const sub = await this.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidPub });
             console.log('got sub', sub);
             console.log(sub.toJSON());
         } catch (e) {
             console.log('error', e);
         }
+    }
+}
+
+interface APIResponse<T> {
+    data: T
+    error: string
+}
+
+interface SessionInfo {
+    sessionId: string
+    vapidPub: string
+}
+
+class ServerError extends Error {
+}
+
+async function createSession(): Promise<SessionInfo> {
+    return extractSuccess(await (await fetch('/api/create_session')).json());
+}
+
+function extractSuccess<T>(obj: any): T {
+    const resp = obj as APIResponse<T>;
+    if (resp.error) {
+        throw new ServerError(resp.error);
+    } else {
+        return resp.data;
     }
 }
 

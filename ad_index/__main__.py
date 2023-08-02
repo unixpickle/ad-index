@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 
 from aiohttp import web
 
@@ -7,19 +8,22 @@ from .client import Client
 from .db import DB
 from .server import Server
 
+DEFAULT_ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", type=str, default="ad_index.db")
+    parser.add_argument("--asset-dir", type=str, default=DEFAULT_ASSET_DIR)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
 
     async with DB.connect(args.db) as db:
         async with Client.create() as client:
-            server = Server(db=db, client=client)
+            server = Server(asset_dir=args.asset_dir, db=db, client=client)
             app = web.Application()
-            app.add_routes([web.get("/", server.index)])
+            server.add_routes(app.router)
 
             # https://stackoverflow.com/questions/53465862/python-aiohttp-into-existing-event-loop
             runner = web.AppRunner(app)
