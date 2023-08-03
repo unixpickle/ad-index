@@ -35,9 +35,11 @@ class App {
                 localStorage.setItem('sessionId', session.sessionId);
                 vapidPub = session.vapidPub;
             }
-            const sub = await this.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidPub });
-            console.log('got sub', sub);
-            console.log(sub.toJSON());
+            const sub = await this.registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: vapidPub,
+            });
+            await fetch(`/api/update_push_sub?session_id=${encodeURIComponent(localStorage.getItem('sessionId'))}&push_sub=${JSON.stringify(sub.toJSON())}`);
         } catch (e) {
             console.log('error', e);
         }

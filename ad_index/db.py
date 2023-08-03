@@ -8,6 +8,8 @@ from functools import partial
 from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
 
 import aiosqlite
+from httpx import Client
+from requests import session
 
 R = TypeVar("R")
 
@@ -18,6 +20,12 @@ class AdQuery:
     nickname: str
     query: str
     filters: List[str]
+
+
+@dataclass
+class ClientPushInfo:
+    push_sub: Optional[str]
+    vapid_priv: str
 
 
 class DB:
@@ -118,23 +126,46 @@ class DB:
     ):
         async with self._lock:
             hash = hash_session_id(session_id)
-            await self._retry(
+            await self._retry_execute_commit(
+                "INSERT INTO clients (vapid_pub, vapid_priv, session_id, session_hash) VALUES (?, ?, ?, ?)",
+                (vapid_pub, vapid_priv, session_id, hash),
+            )
+
+    async def update_client_push_sub(
+        self, session_id: str, push_sub: Optional[str]
+    ) -> bool:
+        async with self._lock:
+            hash = hash_session_id(session_id)
+            count = await self._retry_execute_commit(
+                "UPDATE clients SET push_sub=? WHERE session_hash=?",
+                (push_sub, hash),
+            )
+            return count != 0
+
+    async def get_client_push_info(self, session_id: str) -> Optional[ClientPushInfo]:
+        async with self._lock:
+            hash = hash_session_id(session_id)
+            cursor = await self._retry(
                 partial(
                     self._conn.execute,
-                    "INSERT INTO clients (vapid_pub, vapid_priv, session_id, session_hash) VALUES (?, ?, ?, ?)",
-                    (vapid_pub, vapid_priv, session_id, hash),
+                    "SELECT push_sub, vapid_priv FROM clients WHERE session_hash=?",
+                    hash,
                 )
             )
-            await self._retry(self._conn.commit)
+            async for row in cursor:
+                return ClientPushInfo(push_sub=row[0], vapid_priv=row[1])
+            return None
 
-    async def _retry_execute_commit(self, *args):
-        await self._retry(
+    async def _retry_execute_commit(self, *args) -> int:
+        cursor = await self._retry(
             partial(
                 self._conn.execute,
                 *args,
             )
         )
+        count = cursor.rowcount
         await self._retry(self._conn.commit)
+        return count
 
     async def _retry(self, fn: Callable[[], Awaitable[R]]) -> R:
         while True:
