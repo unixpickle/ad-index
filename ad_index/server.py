@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import traceback
@@ -33,11 +34,22 @@ def api_method(
 
 
 class Server:
-    def __init__(self, asset_dir: str, db: DB, client: Client, notifier: Notifier):
+    def __init__(
+        self,
+        asset_dir: str,
+        db: DB,
+        client: Client,
+        notifier: Notifier,
+        max_message_retries: int,
+        message_retry_interval: int,
+    ):
         self.asset_dir = asset_dir
         self.db = db
         self.client = client
         self.notifier = notifier
+        self.max_message_retries = max_message_retries
+        self.message_retry_interval = message_retry_interval
+        asyncio.create_task(self._push_queue_loop())
 
     def add_routes(self, router: UrlDispatcher):
         router.add_get("/", self.index)
@@ -96,3 +108,20 @@ class Server:
         )
         if not found:
             raise APIError("session_id not found")
+
+    async def _push_queue_loop(self):
+        while True:
+            item = await self.db.push_queue_next(
+                retry_timeout=self.message_retry_interval
+            )
+            if item is None:
+                await asyncio.sleep(10.0)
+                continue
+            status = None
+            try:
+                status = await self.notifier.notify(item.push_info, item.message)
+            except:
+                traceback.print_exc()
+            if status == 201 or item.retries >= self.max_message_retries:
+                await self.db.push_queue_finish(item.id)
+                # TODO: unsubscribe push notifications if the retries were exceeded.

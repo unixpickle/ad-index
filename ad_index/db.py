@@ -5,9 +5,10 @@ import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
+from typing import Awaitable, Callable, Iterator, List, Optional, Tuple, TypeVar, Union
 
 import aiosqlite
+from httpx import Client
 
 R = TypeVar("R")
 
@@ -24,6 +25,14 @@ class AdQuery:
 class ClientPushInfo:
     push_sub: Optional[str]
     vapid_priv: str
+
+
+@dataclass
+class PushQueueItem:
+    id: int
+    push_info: ClientPushInfo
+    message: str
+    retries: int
 
 
 class DB:
@@ -73,7 +82,23 @@ class DB:
         )
         await self._conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS push_queue (
+                id          INTEGER  PRIMARY KEY,
+                client_id   INTEGER  NOT NULL,
+                message     TEXT     NOT NULL,
+                retry_time  INTEGER  NOT NULL,
+                retries     INTEGER  NOT NULL
+            );
+            """
+        )
+        await self._conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS clients_session_hash ON clients(session_hash)
+            """
+        )
+        await self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS push_queue_retry_time ON push_queue(retry_time)
             """
         )
         await self._conn.commit()
@@ -153,6 +178,45 @@ class DB:
             async for row in cursor:
                 return ClientPushInfo(push_sub=row[0], vapid_priv=row[1])
             return None
+
+    async def push_queue_next(self, retry_timeout: int) -> Optional[PushQueueItem]:
+        async with self._lock:
+            async with await self._retry(self._conn.cursor) as tx:
+                cursor = await tx.execute(
+                    """
+                    SELECT
+                        push_queue.id,
+                        push_queue.message,
+                        push_queue.retries,
+                        clients.push_sub,
+                        clients.vapid_priv
+                    FROM push_queue
+                    LEFT JOIN clients ON clients.client_id = push_queue.client_id
+                    WHERE retry_time <= STRFTIME('%s')
+                    ORDER BY retry_time
+                    """
+                )
+                row = None
+                async for row in cursor:
+                    break
+                if row is None:
+                    return None
+                id, message, retries, push_sub, vapid_priv = row
+                await tx.execute(
+                    "UPDATE push_queue SET retry_time=STRFTIME('%s')+?, retries=? WHERE id=?",
+                    (retry_timeout, retries + 1, id),
+                )
+                await tx.execute("commit")
+                return PushQueueItem(
+                    id=id,
+                    push_info=ClientPushInfo(push_sub=push_sub, vapid_priv=vapid_priv),
+                    message=message,
+                    retries=retries,
+                )
+
+    async def push_queue_finish(self, id: int):
+        async with self._lock:
+            await self._retry_execute_commit("DELETE FROM push_queue WHERE id=?", (id,))
 
     async def _retry_execute_commit(self, *args) -> int:
         cursor = await self._retry(

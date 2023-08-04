@@ -17,12 +17,12 @@ class Notifier:
         self.executor = ThreadPoolExecutor(1)
         self.session = requests.Session()
 
-    async def notify(self, info: ClientPushInfo, message: Any) -> int:
+    async def notify(self, info: ClientPushInfo, message: str) -> int:
         return await asyncio.get_running_loop().run_in_executor(
             self.executor,
             lambda: webpush(
                 json.loads(info.push_sub),
-                data=json.dumps(message),
+                data=message,
                 vapid_private_key=Vapid.from_pem(info.vapid_priv),
                 vapid_claims={"sub": self.vapid_sub},
             ).status_code,
