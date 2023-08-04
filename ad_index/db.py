@@ -8,8 +8,6 @@ from functools import partial
 from typing import Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
 
 import aiosqlite
-from httpx import Client
-from requests import session
 
 R = TypeVar("R")
 
@@ -149,7 +147,7 @@ class DB:
                 partial(
                     self._conn.execute,
                     "SELECT push_sub, vapid_priv FROM clients WHERE session_hash=?",
-                    hash,
+                    (hash,),
                 )
             )
             async for row in cursor:

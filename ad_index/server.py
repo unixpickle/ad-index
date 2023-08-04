@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import traceback
@@ -12,6 +11,7 @@ from py_vapid.utils import b64urlencode
 
 from .client import Client
 from .db import DB, hash_session_id
+from .notifier import Notifier
 
 
 class APIError(Exception):
@@ -33,10 +33,11 @@ def api_method(
 
 
 class Server:
-    def __init__(self, asset_dir: str, db: DB, client: Client):
+    def __init__(self, asset_dir: str, db: DB, client: Client, notifier: Notifier):
         self.asset_dir = asset_dir
         self.db = db
         self.client = client
+        self.notifier = notifier
 
     def add_routes(self, router: UrlDispatcher):
         router.add_get("/", self.index)
