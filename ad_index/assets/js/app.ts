@@ -39,36 +39,14 @@ class App {
                 userVisibleOnly: true,
                 applicationServerKey: vapidPub,
             });
-            await fetch(`/api/update_push_sub?session_id=${encodeURIComponent(localStorage.getItem('sessionId'))}&push_sub=${JSON.stringify(sub.toJSON())}`);
+            console.log('got subscription:', sub);
+            await updatePushSub(
+                localStorage.getItem('sessionId'),
+                sub ? JSON.stringify(sub.toJSON()) : null,
+            );
         } catch (e) {
             console.log('error', e);
         }
-    }
-}
-
-interface APIResponse<T> {
-    data: T
-    error: string
-}
-
-interface SessionInfo {
-    sessionId: string
-    vapidPub: string
-}
-
-class ServerError extends Error {
-}
-
-async function createSession(): Promise<SessionInfo> {
-    return extractSuccess(await (await fetch('/api/create_session')).json());
-}
-
-function extractSuccess<T>(obj: any): T {
-    const resp = obj as APIResponse<T>;
-    if (resp.error) {
-        throw new ServerError(resp.error);
-    } else {
-        return resp.data;
     }
 }
 
