@@ -5,30 +5,28 @@ import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Iterator,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Any, Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
 
 import aiosqlite
-from httpx import Client
 
 R = TypeVar("R")
 
 
 @dataclass
-class AdQuery:
-    ad_query_id: Optional[int]
+class AdQueryBase:
     nickname: str
     query: str
     filters: List[str]
+
+
+@dataclass
+class AdQuery(AdQueryBase):
+    ad_query_id: int
+
+
+@dataclass
+class AdQueryResult(AdQuery):
+    subscribed: bool
 
 
 @dataclass
@@ -129,24 +127,57 @@ class DB:
         )
 
     @transaction
-    async def ad_queries(self) -> Iterator[AdQuery]:
-        async with await self._conn.execute(
-            "SELECT ad_query_id, nickname, query, filters FROM ad_queries"
-        ) as results:
-            async for row in results:
-                yield AdQuery(
-                    ad_query_id=row[0],
+    async def ad_queries(self, session_id: str) -> List[AdQueryResult]:
+        hash = hash_session_id(session_id)
+        cursor = await self._conn.execute(
+            """
+            SELECT ad_queries.ad_query_id, nickname, query, filters, client_subs.client_id
+            FROM ad_queries
+            LEFT JOIN client_subs ON client_subs.ad_query_id = ad_queries.ad_query_id
+            WHERE client_subs.client_id IS NULL OR client_subs.client_id = (
+                SELECT client_id FROM clients WHERE clients.session_hash = ?
+            )
+            """,
+            (hash,),
+        )
+        results = []
+        async for row in cursor:
+            results.append(
+                AdQueryResult(
                     nickname=row[1],
                     query=row[2],
                     filters=json.loads(row[3]),
+                    ad_query_id=str(row[0]),
+                    subscribed=row[4] is not None,
                 )
+            )
+        return results
 
     @transaction
-    async def insert_ad_query(self, q: AdQuery) -> int:
-        return await self._conn.execute_insert(
+    async def insert_ad_query(
+        self, q: AdQueryBase, sub_session_id: Optional[str] = None
+    ) -> Optional[int]:
+        if sub_session_id:
+            hash = hash_session_id(sub_session_id)
+            client_id = None
+            async for row in await self._conn.execute(
+                "SELECT client_id FROM clients WHERE session_hash=?", (hash,)
+            ):
+                (client_id,) = row
+                break
+            if client_id is None:
+                return None
+        result = await self._conn.execute_insert(
             "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
             (q.nickname, q.query, json.dumps(q.filters)),
         )
+        (id,) = result
+        if sub_session_id:
+            await self._conn.execute_insert(
+                "INSERT INTO client_subs (ad_query_id, client_id) VALUES (?, ?)",
+                (id, client_id),
+            )
+        return id
 
     @transaction
     async def update_ad_query(self, q: AdQuery) -> bool:

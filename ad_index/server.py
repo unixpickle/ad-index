@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import traceback
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Dict, List
 
 from aiohttp import web
 from aiohttp.web import Request, UrlDispatcher
@@ -11,7 +11,7 @@ from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import DB, hash_session_id
+from .db import DB, AdQueryBase, hash_session_id
 from .notifier import Notifier
 
 
@@ -55,6 +55,8 @@ class Server:
         router.add_get("/", self.index)
         router.add_get("/api/create_session", self.api_create_session)
         router.add_get("/api/update_push_sub", self.api_update_push_sub)
+        router.add_get("/api/get_ad_queries", self.api_get_ad_queries)
+        router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
         router.add_static("/", self.asset_dir)
 
     async def index(self, _request: Request):
@@ -75,13 +77,9 @@ class Server:
             )
         except Exception as exc:
             raise APIError("Unable to create session in database") from exc
-        return web.json_response(
-            data=dict(
-                data=dict(
-                    sessionId=session_id,
-                    vapidPub=b64urlencode(vapid_pub),
-                )
-            )
+        return dict(
+            sessionId=session_id,
+            vapidPub=b64urlencode(vapid_pub),
         )
 
     @api_method
@@ -108,6 +106,48 @@ class Server:
         )
         if not found:
             raise APIError("session_id not found")
+
+    @api_method
+    async def api_get_ad_queries(self, request: Request) -> List[Dict[str, Any]]:
+        session_id = request.query.getone("session_id")
+        results = []
+        for item in await self.db.ad_queries(session_id):
+            results.append(
+                dict(
+                    adQueryId=item.ad_query_id,
+                    nickname=item.nickname,
+                    query=item.query,
+                    filters=item.filters,
+                    subscribed=item.subscribed,
+                )
+            )
+        return results
+
+    @api_method
+    async def api_insert_ad_query(self, request: Request) -> List[Dict[str, Any]]:
+        try:
+            session_id = request.query.getone("session_id")
+            nickname = request.query.getone("nickname")
+            query = request.query.getone("query")
+            filters = json.loads(request.query.getone("filters"))
+            subscribed = json.loads(request.query.getone("subscribed"))
+        except KeyError as exc:
+            raise APIError(f"argument not found: {exc}")
+        except json.JSONDecodeError as exc:
+            raise APIError(f"failed to parse argument: {exc}")
+        if not isinstance(filters, list) or not all(
+            isinstance(x, str) for x in filters
+        ):
+            raise APIError("filters must be a JSON-encoded array of strings")
+        if not isinstance(subscribed, bool):
+            raise APIError("subscribed must be true or false")
+        result_id = await self.db.insert_ad_query(
+            AdQueryBase(nickname=nickname, query=query, filters=filters),
+            sub_session_id=(session_id if subscribed else None),
+        )
+        if result_id is None:
+            raise APIError("session_id was not found")
+        return result_id
 
     async def _push_queue_loop(self):
         while True:
