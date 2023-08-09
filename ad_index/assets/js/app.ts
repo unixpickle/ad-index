@@ -4,32 +4,31 @@ interface Window {
 
 class App {
     registration: ServiceWorkerRegistration;
-    notificationsButton: HTMLButtonElement;
     session: SessionInfo;
+    queryList: QueryList;
+    notificationsButton: HTMLButtonElement;
 
     constructor(session: SessionInfo) {
         this.registration = null;
+        this.session = session;
+
+        this.queryList = new QueryList(this.session);
+        document.body.appendChild(this.queryList.element);
+
         this.notificationsButton = (
             document.getElementById('notifications-button') as HTMLButtonElement
         );
         this.notificationsButton.addEventListener('click', () => this.toggleNotifications());
 
-        this.session = session;
-
         navigator.serviceWorker.register('/js/worker.js').then((reg) => {
             this.registration = reg;
+            // TODO: use active state to update button.
         }).catch((e) => {
-            this.showWorkerError(e.toString());
+            // TODO: handle error here.
         });
     }
 
-    showWorkerError(e: string) {
-        console.log('error registering worker: ' + e);
-        // TODO: this.
-    }
-
     async toggleNotifications() {
-        console.log('attempting to subscribe to notifications');
         try {
             const sub = await this.registration.pushManager.subscribe({
                 userVisibleOnly: true,
@@ -40,6 +39,7 @@ class App {
             console.log('error toggling notifications:', e);
             await this._syncWebPushSubscription(null);
         }
+        // TODO: update toggle UI
     }
 
     async _syncWebPushSubscription(sub: PushSubscription) {

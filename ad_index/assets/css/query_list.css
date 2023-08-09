@@ -1,0 +1,57 @@
+.query-list {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.query-list-error-message,
+.query-list-empty-message {
+    padding: 16px;
+    margin: 8px;
+    text-align: center;
+    background-color: white;
+}
+
+.query-list-error-message::before {
+    content: 'An error has been encountered.';
+    font-weight: bolder;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.query-list-item {
+    flex: 1;
+    padding: 16px;
+    margin: 8px;
+    background-color: white;
+    max-width: 192px;
+}
+
+.query-list-item-nickname,
+.query-list-item-query {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.query-list-item-nickname {
+    margin-bottom: 8px;
+}
+
+.query-list-item-nickname::before,
+.query-list-item-query::before {
+    font-weight: bolder;
+}
+
+.query-list-item-nickname::before {
+    content: "Name: ";
+}
+
+.query-list-item-query::before {
+    content: "Query: ";
+}
