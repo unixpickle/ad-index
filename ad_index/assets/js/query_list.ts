@@ -46,14 +46,46 @@ class QueryList {
         const elements = results.map((info) => {
             const elem = document.createElement('div');
             elem.setAttribute('class', 'query-list-item');
+
             const nickname = document.createElement('label');
             nickname.setAttribute('class', 'query-list-item-nickname');
             nickname.textContent = info.nickname;
             elem.appendChild(nickname);
+
             const query = document.createElement('label');
             query.setAttribute('class', 'query-list-item-query');
             query.textContent = info.query;
             elem.appendChild(query);
+
+            const subRow = document.createElement('div');
+            subRow.setAttribute('class', 'query-list-item-subscription')
+            const subCheckbox = document.createElement('input');
+            subCheckbox.setAttribute('type', 'checkbox');
+            subCheckbox.setAttribute('class', 'query-list-item-subscription-input');
+            subCheckbox.id = `${Math.random()}${Math.random()}`;
+            subCheckbox.checked = info.subscribed;
+            subRow.appendChild(subCheckbox);
+            const subCheckboxLabel = document.createElement('label');
+            subCheckboxLabel.setAttribute('class', 'query-list-item-subscription-label');
+            subCheckboxLabel.setAttribute('for', subCheckbox.id);
+            subCheckboxLabel.textContent = 'Notify me';
+            subRow.appendChild(subCheckboxLabel);
+            elem.appendChild(subRow);
+
+            subCheckbox.addEventListener('input', () => {
+                const checked = subCheckbox.checked;
+                subRow.classList.add('disabled');
+                toggleAdQuerySubscription(
+                    this.session.sessionId,
+                    info.adQueryId,
+                    checked,
+                ).catch((_) => {
+                    subCheckbox.checked = info.subscribed;
+                }).finally(() => {
+                    subRow.classList.remove('disabled');
+                });
+            });
+
             return elem;
         });
         this.element.replaceChildren(...elements);

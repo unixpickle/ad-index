@@ -57,6 +57,9 @@ class Server:
         router.add_get("/api/update_push_sub", self.api_update_push_sub)
         router.add_get("/api/get_ad_queries", self.api_get_ad_queries)
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
+        router.add_get(
+            "/api/toggle_ad_query_subscription", self.api_toggle_ad_query_subscription
+        )
         router.add_static("/", self.asset_dir)
 
     async def index(self, _request: Request):
@@ -114,7 +117,7 @@ class Server:
         for item in await self.db.ad_queries(session_id):
             results.append(
                 dict(
-                    adQueryId=item.ad_query_id,
+                    adQueryId=str(item.ad_query_id),
                     nickname=item.nickname,
                     query=item.query,
                     filters=item.filters,
@@ -124,7 +127,7 @@ class Server:
         return results
 
     @api_method
-    async def api_insert_ad_query(self, request: Request) -> List[Dict[str, Any]]:
+    async def api_insert_ad_query(self, request: Request) -> str:
         try:
             session_id = request.query.getone("session_id")
             nickname = request.query.getone("nickname")
@@ -147,7 +150,25 @@ class Server:
         )
         if result_id is None:
             raise APIError("session_id was not found")
-        return result_id
+        return str(result_id)
+
+    @api_method
+    async def api_toggle_ad_query_subscription(self, request: Request):
+        try:
+            session_id = request.query.getone("session_id")
+            ad_query_id = int(request.query.getone("ad_query_id"))
+            subscribed = json.loads(request.query.getone("subscribed"))
+        except KeyError as exc:
+            raise APIError(f"argument not found: {exc}")
+        except ValueError as exc:
+            raise APIError(f"failed to parse arument: {exc}")
+        status = await self.db.toggle_ad_query_subscription(
+            ad_query_id=ad_query_id,
+            session_id=session_id,
+            subscribed=subscribed,
+        )
+        if not status:
+            raise APIError("either ad_query_id or session_id was invalid")
 
     async def _push_queue_loop(self):
         while True:

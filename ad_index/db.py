@@ -189,6 +189,36 @@ class DB:
         ).rowcount != 0
 
     @transaction
+    async def toggle_ad_query_subscription(
+        self, ad_query_id: int, session_id: str, subscribed: bool
+    ) -> bool:
+        hash = hash_session_id(session_id)
+        client_id = None
+        async for row in await self._conn.execute(
+            "SELECT client_id FROM clients WHERE session_hash=?", (hash,)
+        ):
+            (client_id,) = row
+        if client_id is None:
+            return False
+        exists = await self._conn.execute(
+            "SELECT EXISTS(SELECT * FROM ad_queries WHERE ad_query_id=?)",
+            (ad_query_id,),
+        )
+        if not exists:
+            return False
+        if subscribed:
+            await self._conn.execute(
+                "REPLACE INTO client_subs (ad_query_id, client_id) VALUES (?, ?)",
+                (ad_query_id, client_id),
+            )
+        else:
+            await self._conn.execute(
+                "DELETE FROM client_subs WHERE ad_query_id=? AND client_id=?",
+                (ad_query_id, client_id),
+            )
+        return True
+
+    @transaction
     async def delete_ad_query(self, id: int) -> bool:
         return (
             await self._conn.execute(

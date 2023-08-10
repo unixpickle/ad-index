@@ -56,6 +56,15 @@ async function insertAdQuery(sessionId: string, info: AdQueryBase, subscribed: b
     return extractSuccess(await (await fetch(uri)).json());
 }
 
+async function toggleAdQuerySubscription(sessionId: string, adQueryId: string, subscribed: boolean) {
+    const uri = (
+        `/api/toggle_ad_query_subscription?session_id=${encodeURIComponent(sessionId)}`
+        + `&ad_query_id=${encodeURIComponent(adQueryId)}`
+        + `&subscribed=${encodeURIComponent(JSON.stringify(subscribed))}`
+    );
+    extractSuccess(await (await fetch(uri)).json());
+}
+
 function extractSuccess<T>(obj: any): T {
     const resp = obj as APIResponse<T>;
     if (resp.error) {

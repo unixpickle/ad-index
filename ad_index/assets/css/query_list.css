@@ -37,9 +37,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.query-list-item-nickname {
     margin-bottom: 8px;
 }
 
