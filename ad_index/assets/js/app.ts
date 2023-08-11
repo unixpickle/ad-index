@@ -12,6 +12,7 @@ class App {
 
         this.queryList = new QueryList(this.session)
         document.body.appendChild(this.queryList.element)
+        this.queryList.onselect = (adQueryId) => this.showQueryEditor(adQueryId)
 
         this.notificationsButton = (
             document.getElementById('notifications-button') as HTMLButtonElement
@@ -35,17 +36,26 @@ class App {
             await this.syncWebPushSubscription(sub)
         } catch (e) {
             console.log('error toggling notifications:', e)
-            await this.syncWebPushSubscription(null)
+            await this.syncWebPushSubscription()
         }
         // TODO: update toggle UI
     }
 
-    private async syncWebPushSubscription(sub: PushSubscription) {
+    private async syncWebPushSubscription(sub?: PushSubscription) {
         sub = sub || await this.registration.pushManager.getSubscription()
         await updatePushSub(
             this.session.sessionId,
             sub ? JSON.stringify(sub.toJSON()) : null,
         )
+    }
+
+    private showQueryEditor(adQueryId: string) {
+        const editor = new QueryEditor(this.session, adQueryId)
+        document.body.replaceChild(editor.element, this.queryList.element)
+        editor.oncomplete = () => {
+            document.body.replaceChild(this.queryList.element, editor.element)
+            this.queryList.reload()
+        }
     }
 }
 

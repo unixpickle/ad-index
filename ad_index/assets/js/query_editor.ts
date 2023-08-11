@@ -1,0 +1,147 @@
+class QueryEditor {
+    public element: HTMLElement
+    public oncomplete: () => void
+
+    private loader: Loader
+    private nickname: QueryEditorField
+    private query: QueryEditorField
+    private filters: QueryEditorField
+    private subscribed: QueryEditorField
+    private submit: HTMLButtonElement
+    private info: AdQueryResult
+
+    constructor(private session: SessionInfo, private adQueryId: string) {
+        this.element = document.createElement('div')
+        this.element.setAttribute('class', 'query-editor')
+
+        this.loader = new Loader()
+        this.nickname = new QueryEditorField('Name', '')
+        this.query = new QueryEditorField('Query', '')
+        this.filters = new QueryEditorField('Filters', '')
+        this.subscribed = new QueryEditorCheckField('Notifications', '')
+        this.submit = document.createElement('button')
+        this.submit.setAttribute('class', 'query-editor-submit')
+        this.submit.textContent = 'Save'
+        this.submit.addEventListener('click', () => this.attemptToSave())
+
+        this.fetchInfo()
+    }
+
+    private async fetchInfo() {
+        this.element.replaceChildren(this.loader.element)
+        let result
+        try {
+            result = await getAdQuery(this.session.sessionId, this.adQueryId)
+        } catch (e) {
+            this.showError(e.toString())
+            return
+        }
+        this.showInfo(result)
+    }
+
+    private showError(e: string) {
+        const errorMsg = document.createElement('div')
+        errorMsg.setAttribute('class', 'query-editor-error-message')
+        errorMsg.textContent = e
+        this.element.replaceChildren(errorMsg)
+        return
+    }
+
+    private showInfo(info: AdQueryResult) {
+        this.info = info;
+        this.nickname.setValue(info.nickname)
+        this.query.setValue(info.query)
+        this.filters.setValue(info.filters.join(','))
+        this.subscribed.input.checked = info.subscribed
+        this.element.replaceChildren(
+            this.nickname.element,
+            this.query.element,
+            this.filters.element,
+            this.subscribed.element,
+            this.submit,
+        )
+    }
+
+    private async attemptToSave() {
+        let hasEmpty = false;
+        [this.nickname, this.query].forEach((field) => {
+            if (!field.input.value) {
+                hasEmpty = true;
+                field.invalidWithReason('This field must not be empty')
+            }
+        })
+        if (hasEmpty) {
+            return
+        }
+        const filters = this.filters.input.value;
+        try {
+            await updateAdQuery(this.session.sessionId, {
+                nickname: this.nickname.input.value,
+                query: this.query.input.value,
+                filters: filters ? filters.split(',') : [],
+                adQueryId: this.info.adQueryId,
+                subscribed: this.subscribed.input.checked,
+            })
+        } catch (e) {
+            // TODO: more granular error handling here
+            this.nickname.invalidWithReason(e.toString())
+            return
+        }
+        this.oncomplete()
+    }
+}
+
+class QueryEditorField {
+    public element: HTMLElement
+    public input: HTMLInputElement
+    private validatorField: HTMLElement
+
+    constructor(private name: string, private value: string) {
+        this.element = document.createElement('div')
+        this.element.setAttribute('class', 'query-editor-field')
+
+        this.input = document.createElement('input')
+        this.input.id = `query-editor-input-${name.replace(' ', '-').toLowerCase()}`
+        this.input.setAttribute('placeholder', name)
+        this.input.setAttribute('class', 'query-editor-field-input')
+        const label = document.createElement('label')
+        label.setAttribute('for', this.input.id)
+        label.setAttribute('class', 'query-editor-field-label')
+        label.textContent = name
+
+        this.validatorField = document.createElement('div')
+        this.validatorField.setAttribute('class', 'query-editor-field-validator')
+
+        this.element.appendChild(label)
+        this.element.appendChild(this.input)
+        this.element.appendChild(this.validatorField)
+
+        this.input.addEventListener('input', () => this.setValid(true))
+    }
+
+    public setValue(value: string) {
+        this.input.value = value
+        this.setValid(true)
+    }
+
+    public invalidWithReason(reason: string) {
+        this.validatorField.textContent = reason
+        this.setValid(false)
+    }
+
+    private setValid(valid: boolean) {
+        if (valid) {
+            this.element.classList.remove('query-editor-field-invalid')
+        } else {
+            this.element.classList.add('query-editor-field-invalid')
+        }
+    }
+}
+
+class QueryEditorCheckField extends QueryEditorField {
+    constructor(name: string, value: string) {
+        super(name, value)
+        this.input.setAttribute('type', 'checkbox')
+        this.element.classList.add('query-editor-field-checkbox')
+    }
+}

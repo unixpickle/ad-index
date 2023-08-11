@@ -5,11 +5,25 @@ import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Awaitable, Callable, Iterator, List, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import aiosqlite
 
 R = TypeVar("R")
+
+
+class DataArgumentError(Exception):
+    pass
 
 
 @dataclass
@@ -27,6 +41,15 @@ class AdQuery(AdQueryBase):
 @dataclass
 class AdQueryResult(AdQuery):
     subscribed: bool
+
+    def to_json(self) -> Dict[str, Any]:
+        return dict(
+            adQueryId=str(self.ad_query_id),
+            nickname=self.nickname,
+            query=self.query,
+            filters=self.filters,
+            subscribed=self.subscribed,
+        )
 
 
 @dataclass
@@ -79,7 +102,8 @@ class DB:
                 ad_query_id  INTEGER  PRIMARY KEY AUTOINCREMENT,
                 nickname     TEXT     NOT NULL,
                 query        TEXT     NOT NULL,
-                filters      TEXT     NOT NULL
+                filters      TEXT     NOT NULL,
+                UNIQUE(nickname)
             )
             """
         )
@@ -127,18 +151,24 @@ class DB:
         )
 
     @transaction
-    async def ad_queries(self, session_id: str) -> List[AdQueryResult]:
+    async def ad_queries(
+        self, session_id: str, ad_query_id: Optional[int] = None
+    ) -> List[AdQueryResult]:
         hash = hash_session_id(session_id)
         cursor = await self._conn.execute(
-            """
+            f"""
             SELECT ad_queries.ad_query_id, nickname, query, filters, client_subs.client_id
             FROM ad_queries
             LEFT JOIN client_subs ON client_subs.ad_query_id = ad_queries.ad_query_id
-            WHERE client_subs.client_id IS NULL OR client_subs.client_id = (
-                SELECT client_id FROM clients WHERE clients.session_hash = ?
+            WHERE (
+                client_subs.client_id IS NULL OR
+                client_subs.client_id = (
+                    SELECT client_id FROM clients WHERE clients.session_hash = ?
+                )
+                {f'AND ad_queries.ad_query_id = ?' if ad_query_id is not None else ''}
             )
             """,
-            (hash,),
+            (hash, *([ad_query_id] if ad_query_id is not None else [])),
         )
         results = []
         async for row in cursor:
@@ -180,16 +210,34 @@ class DB:
         return id
 
     @transaction
-    async def update_ad_query(self, q: AdQuery) -> bool:
-        return (
-            await self._conn.execute(
-                "REPLACE INTO ad_queries (ad_query_id, nickname, query, filters) VALUES (?, ?, ?)",
-                (q.ad_query_id, q.nickname, q.query, json.dumps(q.filters)),
-            )
-        ).rowcount != 0
+    async def update_ad_query(
+        self, q: AdQueryResult, session_id: str
+    ) -> Dict[str, Any]:
+        try:
+            updated_data = (
+                await self._conn.execute(
+                    "UPDATE ad_queries SET nickname=?, query=?, filters=? WHERE ad_query_id=?",
+                    (q.nickname, q.query, json.dumps(q.filters), q.ad_query_id),
+                )
+            ).rowcount != 0
+        except sqlite3.IntegrityError as exc:
+            if "UNIQUE" in str(exc):
+                raise DataArgumentError("name is already in use")
+            raise
+        updated_sub = await self._toggle_ad_query_subscription(
+            q.ad_query_id, session_id, q.subscribed
+        )
+        return dict(updated_data=updated_data, updated_sub=updated_sub)
 
     @transaction
     async def toggle_ad_query_subscription(
+        self, ad_query_id: int, session_id: str, subscribed: bool
+    ) -> bool:
+        return await self._toggle_ad_query_subscription(
+            ad_query_id, session_id, subscribed
+        )
+
+    async def _toggle_ad_query_subscription(
         self, ad_query_id: int, session_id: str, subscribed: bool
     ) -> bool:
         hash = hash_session_id(session_id)

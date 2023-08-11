@@ -1,5 +1,6 @@
 class QueryList {
     public element: HTMLDivElement
+    public onselect: (adQueryId: string) => void
     private loader: Loader
 
     constructor(private session: SessionInfo) {
@@ -7,12 +8,12 @@ class QueryList {
         this.element.setAttribute('class', 'query-list')
 
         this.loader = new Loader()
-        this.element.appendChild(this.loader.element)
 
         this.reload()
     }
 
-    private async reload() {
+    public async reload() {
+        this.element.replaceChildren(this.loader.element)
         let results
         try {
             results = await getAdQueries(this.session.sessionId)
@@ -81,6 +82,9 @@ class QueryList {
                     subRow.classList.remove('disabled')
                 })
             })
+            subRow.addEventListener('click', (e) => e.stopPropagation())
+
+            elem.addEventListener('click', () => this.onselect(info.adQueryId))
 
             return elem
         })

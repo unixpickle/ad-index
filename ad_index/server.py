@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import traceback
-from typing import Any, Awaitable, Callable, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
 from aiohttp import web
 from aiohttp.web import Request, UrlDispatcher
@@ -11,7 +11,7 @@ from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import DB, AdQueryBase, hash_session_id
+from .db import DB, AdQueryBase, AdQueryResult, hash_session_id
 from .notifier import Notifier
 
 
@@ -56,7 +56,9 @@ class Server:
         router.add_get("/api/create_session", self.api_create_session)
         router.add_get("/api/update_push_sub", self.api_update_push_sub)
         router.add_get("/api/get_ad_queries", self.api_get_ad_queries)
+        router.add_get("/api/get_ad_query", self.api_get_ad_query)
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
+        router.add_get("/api/update_ad_query", self.api_update_ad_query)
         router.add_get(
             "/api/toggle_ad_query_subscription", self.api_toggle_ad_query_subscription
         )
@@ -115,42 +117,37 @@ class Server:
         session_id = request.query.getone("session_id")
         results = []
         for item in await self.db.ad_queries(session_id):
-            results.append(
-                dict(
-                    adQueryId=str(item.ad_query_id),
-                    nickname=item.nickname,
-                    query=item.query,
-                    filters=item.filters,
-                    subscribed=item.subscribed,
-                )
-            )
+            results.append(item.to_json())
         return results
 
     @api_method
-    async def api_insert_ad_query(self, request: Request) -> str:
+    async def api_get_ad_query(self, request: Request) -> Dict[str, Any]:
         try:
             session_id = request.query.getone("session_id")
-            nickname = request.query.getone("nickname")
-            query = request.query.getone("query")
-            filters = json.loads(request.query.getone("filters"))
-            subscribed = json.loads(request.query.getone("subscribed"))
+            ad_query_id = int(request.query.getone("ad_query_id"))
         except KeyError as exc:
             raise APIError(f"argument not found: {exc}")
         except json.JSONDecodeError as exc:
             raise APIError(f"failed to parse argument: {exc}")
-        if not isinstance(filters, list) or not all(
-            isinstance(x, str) for x in filters
-        ):
-            raise APIError("filters must be a JSON-encoded array of strings")
-        if not isinstance(subscribed, bool):
-            raise APIError("subscribed must be true or false")
+        for item in await self.db.ad_queries(session_id, ad_query_id=ad_query_id):
+            return item.to_json()
+        raise APIError("could not find the specified ad_query")
+
+    @api_method
+    async def api_insert_ad_query(self, request: Request) -> str:
+        session_id, ad_query = parse_ad_query_request(request, update=False)
         result_id = await self.db.insert_ad_query(
-            AdQueryBase(nickname=nickname, query=query, filters=filters),
-            sub_session_id=(session_id if subscribed else None),
+            ad_query,
+            sub_session_id=(session_id if ad_query.subscribed else None),
         )
         if result_id is None:
             raise APIError("session_id was not found")
         return str(result_id)
+
+    @api_method
+    async def api_update_ad_query(self, request: Request) -> Dict[str, Any]:
+        session_id, ad_query = parse_ad_query_request(request, update=True)
+        return await self.db.update_ad_query(ad_query, session_id)
 
     @api_method
     async def api_toggle_ad_query_subscription(self, request: Request):
@@ -186,3 +183,34 @@ class Server:
             if status == 201 or item.retries >= self.max_message_retries:
                 await self.db.push_queue_finish(item.id)
                 # TODO: unsubscribe push notifications if the retries were exceeded.
+
+
+def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQueryResult]:
+    try:
+        session_id = request.query.getone("session_id")
+        nickname = request.query.getone("nickname")
+        query = request.query.getone("query")
+        filters = json.loads(request.query.getone("filters"))
+        subscribed = json.loads(request.query.getone("subscribed"))
+        if update:
+            ad_query_id = int(request.query.getone("ad_query_id"))
+        else:
+            ad_query_id = None
+    except KeyError as exc:
+        raise APIError(f"argument not found: {exc}")
+    except json.JSONDecodeError as exc:
+        raise APIError(f"failed to parse argument: {exc}")
+    if not isinstance(filters, list) or not all(isinstance(x, str) for x in filters):
+        raise APIError("filters must be a JSON-encoded array of strings")
+    if not isinstance(subscribed, bool):
+        raise APIError("subscribed must be true or false")
+    return (
+        session_id,
+        AdQueryResult(
+            nickname=nickname,
+            query=query,
+            filters=filters,
+            ad_query_id=ad_query_id,
+            subscribed=subscribed,
+        ),
+    )
