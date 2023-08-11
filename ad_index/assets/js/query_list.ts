@@ -1,33 +1,29 @@
 class QueryList {
-    session: SessionInfo
-    queries: Array<AdQueryResult>
-    element: HTMLDivElement
-    loader: Loader
+    public element: HTMLDivElement;
+    private loader: Loader;
 
-    constructor(session: SessionInfo) {
-        this.session = session;
-        this.queries = null;
+    constructor(private session: SessionInfo) {
         this.element = document.createElement('div');
         this.element.setAttribute('class', 'query-list');
 
         this.loader = new Loader();
         this.element.appendChild(this.loader.element);
 
-        this._reload();
+        this.reload();
     }
 
-    async _reload() {
+    private async reload() {
         let results;
         try {
             results = await getAdQueries(this.session.sessionId);
         } catch (e) {
-            this._showError(e.toString());
+            this.showError(e.toString());
             return;
         }
-        this._renderResults(results);
+        this.renderResults(results);
     }
 
-    _showError(e: string) {
+    private showError(e: string) {
         const errorMsg = document.createElement('div');
         errorMsg.setAttribute('class', 'query-list-error-message');
         errorMsg.textContent = e;
@@ -35,7 +31,7 @@ class QueryList {
         return;
     }
 
-    _renderResults(results: Array<AdQueryResult>) {
+    private renderResults(results: Array<AdQueryResult>) {
         if (results.length === 0) {
             const empty = document.createElement('div');
             empty.setAttribute('class', 'query-list-empty-message');

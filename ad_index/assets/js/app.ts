@@ -3,14 +3,12 @@ interface Window {
 }
 
 class App {
-    registration: ServiceWorkerRegistration;
-    session: SessionInfo;
-    queryList: QueryList;
-    notificationsButton: HTMLButtonElement;
+    private registration: ServiceWorkerRegistration;
+    private queryList: QueryList;
+    private notificationsButton: HTMLButtonElement;
 
-    constructor(session: SessionInfo) {
+    constructor(private session: SessionInfo) {
         this.registration = null;
-        this.session = session;
 
         this.queryList = new QueryList(this.session);
         document.body.appendChild(this.queryList.element);
@@ -28,21 +26,21 @@ class App {
         });
     }
 
-    async toggleNotifications() {
+    private async toggleNotifications() {
         try {
             const sub = await this.registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: this.session.vapidPub,
             });
-            await this._syncWebPushSubscription(sub);
+            await this.syncWebPushSubscription(sub);
         } catch (e) {
             console.log('error toggling notifications:', e);
-            await this._syncWebPushSubscription(null);
+            await this.syncWebPushSubscription(null);
         }
         // TODO: update toggle UI
     }
 
-    async _syncWebPushSubscription(sub: PushSubscription) {
+    private async syncWebPushSubscription(sub: PushSubscription) {
         sub = sub || await this.registration.pushManager.getSubscription();
         await updatePushSub(
             this.session.sessionId,

@@ -1,5 +1,5 @@
 class Loader {
-    element: HTMLElement
+    public element: HTMLElement
 
     constructor() {
         this.element = document.createElement('div');
