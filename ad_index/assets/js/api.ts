@@ -26,23 +26,31 @@ interface AdQueryResult extends AdQuery {
 }
 
 async function createSession(): Promise<SessionInfo> {
-    return extractSuccess(await (await fetch('/api/create_session')).json());
+    return extractSuccess(await (await fetch('/api/create_session')).json())
 }
 
 async function updatePushSub(sessionId: string, pushSub: string) {
     if (!pushSub) {
-        pushSub = null;
+        pushSub = null
     }
     const uri = (
         `/api/update_push_sub?session_id=${encodeURIComponent(sessionId)}`
         + `&push_sub=${encodeURIComponent(pushSub)}`
-    );
-    return extractSuccess(await (await fetch(uri)).json());
+    )
+    return extractSuccess(await (await fetch(uri)).json())
 }
 
 async function getAdQueries(sessionId: string): Promise<Array<AdQueryResult>> {
     const uri = `/api/get_ad_queries?session_id=${encodeURIComponent(sessionId)}`
-    return extractSuccess(await (await fetch(uri)).json());
+    return extractSuccess(await (await fetch(uri)).json())
+}
+
+async function getAdQuery(sessionId: string, adQueryId: string): Promise<AdQueryResult> {
+    const uri = (
+        `/api/get_ad_query?session_id=${encodeURIComponent(sessionId)}` +
+        `&ad_query_id=${encodeURIComponent(adQueryId)}`
+    )
+    return extractSuccess(await (await fetch(uri)).json())
 }
 
 async function insertAdQuery(sessionId: string, info: AdQueryBase, subscribed: boolean) {
@@ -52,8 +60,8 @@ async function insertAdQuery(sessionId: string, info: AdQueryBase, subscribed: b
         + `&query=${encodeURIComponent(info.query)}`
         + `&filters=${encodeURIComponent(JSON.stringify(info.filters))}`
         + `&subscribed=${encodeURIComponent(JSON.stringify(subscribed))}`
-    );
-    return extractSuccess(await (await fetch(uri)).json());
+    )
+    return extractSuccess(await (await fetch(uri)).json())
 }
 
 async function toggleAdQuerySubscription(sessionId: string, adQueryId: string, subscribed: boolean) {
@@ -61,15 +69,15 @@ async function toggleAdQuerySubscription(sessionId: string, adQueryId: string, s
         `/api/toggle_ad_query_subscription?session_id=${encodeURIComponent(sessionId)}`
         + `&ad_query_id=${encodeURIComponent(adQueryId)}`
         + `&subscribed=${encodeURIComponent(JSON.stringify(subscribed))}`
-    );
-    extractSuccess(await (await fetch(uri)).json());
+    )
+    extractSuccess(await (await fetch(uri)).json())
 }
 
 function extractSuccess<T>(obj: any): T {
-    const resp = obj as APIResponse<T>;
+    const resp = obj as APIResponse<T>
     if (resp.error) {
-        throw new ServerError(resp.error);
+        throw new ServerError(resp.error)
     } else {
-        return resp.data;
+        return resp.data
     }
 }
