@@ -4,45 +4,78 @@ interface Window {
 
 class App {
     private registration: ServiceWorkerRegistration
+    private navbar: Navbar
     private queryList: QueryList
-    private notificationsButton: HTMLButtonElement
 
     constructor(private session: SessionInfo) {
         this.registration = null
+
+        this.navbar = new Navbar()
+        document.body.appendChild(this.navbar.element)
+        this.navbar.ontogglenotifications = (enabled) => this.toggleNotifications(enabled)
 
         this.queryList = new QueryList(this.session)
         document.body.appendChild(this.queryList.element)
         this.queryList.onselect = (adQueryId) => this.showQueryEditor(adQueryId)
 
-        this.notificationsButton = (
-            document.getElementById('notifications-button') as HTMLButtonElement
-        )
-        this.notificationsButton.addEventListener('click', () => this.toggleNotifications())
-
         navigator.serviceWorker.register('/js/worker.js').then((reg) => {
             this.registration = reg
-            // TODO: use active state to update button.
+            return reg.pushManager.getSubscription()
+        }).then((sub) => {
+            this.navbar.setNotificationsEnabled(!!sub, true)
+
+            // This step is not strictly necessary, but it is possible that we
+            // updated our subscription and couldn't contact the server, or that
+            // the user manually unsubscribed to notifications.
+            return this.syncWebPushSubscription(sub)
         }).catch((e) => {
-            // TODO: handle error here.
+            this.showError('error setting up and syncing service worker: ' + e)
         })
     }
 
-    private async toggleNotifications() {
-        try {
-            const sub = await this.registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: this.session.vapidPub,
-            })
-            await this.syncWebPushSubscription(sub)
-        } catch (e) {
-            console.log('error toggling notifications:', e)
-            await this.syncWebPushSubscription()
-        }
-        // TODO: update toggle UI
+    showError(e: string) {
+        alert(e)
     }
 
-    private async syncWebPushSubscription(sub?: PushSubscription) {
-        sub = sub || await this.registration.pushManager.getSubscription()
+    private async toggleNotifications(enabled: boolean) {
+        let currentSub
+        try {
+            currentSub = await this.registration.pushManager.getSubscription()
+        } catch (e) {
+            this.showError('error getting current push subscription: ' + e)
+            return
+        }
+        if (!enabled && currentSub) {
+            try {
+                await currentSub.unsubscribe()
+            } catch (e) {
+                this.navbar.setNotificationsEnabled(true, true)
+                this.showError('error unsubscribing: ' + e)
+                return
+            }
+            currentSub = null
+        } else if (enabled) {
+            try {
+                currentSub = await this.registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: this.session.vapidPub,
+                })
+            } catch (e) {
+                this.navbar.setNotificationsEnabled(false, true)
+                this.showError('error subscribing to push notifications: ' + e)
+                return
+            }
+        }
+        try {
+            await this.syncWebPushSubscription(currentSub)
+            this.navbar.setNotificationsEnabled(enabled, true)
+        } catch (e) {
+            this.navbar.setNotificationsEnabled(enabled, false)
+            this.showError('error contacting server (please try refreshing the page): ' + e)
+        }
+    }
+
+    private async syncWebPushSubscription(sub: PushSubscription) {
         await updatePushSub(
             this.session.sessionId,
             sub ? JSON.stringify(sub.toJSON()) : null,
