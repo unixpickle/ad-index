@@ -94,14 +94,15 @@ class Server:
         if push_sub is not None:
             try:
                 obj = json.loads(push_sub)
-                if not isinstance(obj["endpoint"], str):
-                    raise APIError("bad endpoint field")
-                if not isinstance(obj["keys"], dict):
-                    raise APIError("bad keys field")
-                if not isinstance(obj["keys"]["auth"], str):
-                    raise APIError("bad keys/auth field")
-                if not isinstance(obj["keys"]["p256dh"], str):
-                    raise APIError("bad keys/p256dh field")
+                if obj is not None:
+                    if not isinstance(obj["endpoint"], str):
+                        raise APIError("bad endpoint field")
+                    if not isinstance(obj["keys"], dict):
+                        raise APIError("bad keys field")
+                    if not isinstance(obj["keys"]["auth"], str):
+                        raise APIError("bad keys/auth field")
+                    if not isinstance(obj["keys"]["p256dh"], str):
+                        raise APIError("bad keys/p256dh field")
             except KeyError as exc:
                 raise APIError(f"missing key in push_sub: {str(exc)}")
             except json.JSONDecodeError as exc:
