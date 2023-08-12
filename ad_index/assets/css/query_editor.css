@@ -1,0 +1,46 @@
+.query-editor {
+    width: 300px;
+    box-sizing: border-box;
+    background-color: white;
+    padding: 8px;
+    margin: auto;
+}
+
+.query-editor-field {
+    display: block;
+    margin: auto;
+    width: 100%;
+    text-align: left;
+    margin-bottom: 8px;
+}
+
+.query-editor-field-label {
+    display: block;
+    font-size: 0.8em;
+}
+
+.query-editor-field-input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    font-size: 1em;
+}
+
+.query-editor-field-checkbox {
+    text-align: center;
+    direction: rtl;
+}
+
+.query-editor-field-checkbox>* {
+    display: inline;
+    width: auto;
+    font-size: 1em;
+}
+
+.query-editor-actions {
+    text-align: center;
+}
+
+.query-editor-actions>button {
+    margin: 0 4px;
+}

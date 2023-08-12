@@ -1,5 +1,6 @@
 class QueryEditor {
     public element: HTMLElement
+    public oncancel: () => void
     public oncomplete: () => void
 
     private loader: Loader
@@ -7,7 +8,7 @@ class QueryEditor {
     private query: QueryEditorField
     private filters: QueryEditorField
     private subscribed: QueryEditorField
-    private submit: HTMLButtonElement
+    private actions: HTMLDivElement
     private info: AdQueryResult
 
     constructor(private session: SessionInfo, private adQueryId: string) {
@@ -19,10 +20,21 @@ class QueryEditor {
         this.query = new QueryEditorField('Query', '')
         this.filters = new QueryEditorField('Filters', '')
         this.subscribed = new QueryEditorCheckField('Notifications', '')
-        this.submit = document.createElement('button')
-        this.submit.setAttribute('class', 'query-editor-submit')
-        this.submit.textContent = 'Save'
-        this.submit.addEventListener('click', () => this.attemptToSave())
+
+        this.actions = document.createElement('div')
+        this.actions.setAttribute('class', 'query-editor-actions')
+
+        const cancel = document.createElement('button')
+        cancel.setAttribute('class', 'query-editor-actions-cancel')
+        cancel.textContent = 'Cancel'
+        cancel.addEventListener('click', () => this.oncancel())
+        this.actions.appendChild(cancel)
+
+        const submit = document.createElement('button')
+        submit.setAttribute('class', 'query-editor-actions-submit')
+        submit.textContent = 'Save'
+        submit.addEventListener('click', () => this.attemptToSave())
+        this.actions.appendChild(submit)
 
         this.fetchInfo()
     }
@@ -48,7 +60,7 @@ class QueryEditor {
     }
 
     private showInfo(info: AdQueryResult) {
-        this.info = info;
+        this.info = info
         this.nickname.setValue(info.nickname)
         this.query.setValue(info.query)
         this.filters.setValue(info.filters.join(','))
@@ -58,7 +70,7 @@ class QueryEditor {
             this.query.element,
             this.filters.element,
             this.subscribed.element,
-            this.submit,
+            this.actions,
         )
     }
 
@@ -66,14 +78,14 @@ class QueryEditor {
         let hasEmpty = false;
         [this.nickname, this.query].forEach((field) => {
             if (!field.input.value) {
-                hasEmpty = true;
+                hasEmpty = true
                 field.invalidWithReason('This field must not be empty')
             }
         })
         if (hasEmpty) {
             return
         }
-        const filters = this.filters.input.value;
+        const filters = this.filters.input.value
         try {
             await updateAdQuery(this.session.sessionId, {
                 nickname: this.nickname.input.value,

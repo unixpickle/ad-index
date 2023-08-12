@@ -37,6 +37,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.query-list-item-nickname,
+.query-list-item-query,
+.query-list-item-subscription {
     margin-bottom: 8px;
 }
 
@@ -51,4 +56,12 @@
 
 .query-list-item-query::before {
     content: "Query: ";
+}
+
+.query-list-item-actions {
+    text-align: center;
+}
+
+.query-list-item-actions>button {
+    margin: 0 4px;
 }

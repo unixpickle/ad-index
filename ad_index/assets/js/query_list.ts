@@ -1,6 +1,6 @@
 class QueryList {
     public element: HTMLDivElement
-    public onselect: (adQueryId: string) => void
+    public onedit: (adQueryId: string) => void
     private loader: Loader
 
     constructor(private session: SessionInfo) {
@@ -84,7 +84,17 @@ class QueryList {
             })
             subRow.addEventListener('click', (e) => e.stopPropagation())
 
-            elem.addEventListener('click', () => this.onselect(info.adQueryId))
+            const actions = document.createElement('div')
+            actions.setAttribute('class', 'query-list-item-actions')
+            const buttons = ['Delete', 'Edit', 'View'].map((name) => {
+                const button = document.createElement('button')
+                button.textContent = name;
+                button.setAttribute('class', `query-list-item-actions-${name.toLowerCase()}`)
+                actions.appendChild(button)
+                return button
+            })
+            buttons[1].addEventListener('click', () => this.onedit(info.adQueryId))
+            elem.appendChild(actions)
 
             return elem
         })
