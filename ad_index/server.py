@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sqlite3
 import traceback
 from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
@@ -29,6 +30,21 @@ def api_method(
             traceback.print_exc()
             return web.json_response(data=dict(error=str(exc)))
         return web.json_response(data=dict(data=data))
+
+    return _fn
+
+
+def rewrite_db_errors(
+    fn: Callable[..., Awaitable[Any]]
+) -> Callable[..., Awaitable[web.Response]]:
+    async def _fn(*args) -> web.Response:
+        try:
+            return await fn(*args)
+        except sqlite3.IntegrityError as exc:
+            # "UNIQUE constraint failed: ad_queries.nickname"
+            if "UNIQUE" in str(exc) and "nickname" in str(exc):
+                raise APIError("nickname is not unique")
+            raise
 
     return _fn
 
@@ -135,6 +151,7 @@ class Server:
         raise APIError("could not find the specified ad_query")
 
     @api_method
+    @rewrite_db_errors
     async def api_insert_ad_query(self, request: Request) -> str:
         session_id, ad_query = parse_ad_query_request(request, update=False)
         result_id = await self.db.insert_ad_query(
@@ -146,9 +163,16 @@ class Server:
         return str(result_id)
 
     @api_method
+    @rewrite_db_errors
     async def api_update_ad_query(self, request: Request) -> Dict[str, Any]:
         session_id, ad_query = parse_ad_query_request(request, update=True)
-        return await self.db.update_ad_query(ad_query, session_id)
+        try:
+            return await self.db.update_ad_query(ad_query, session_id)
+        except sqlite3.IntegrityError as exc:
+            # "UNIQUE constraint failed: ad_queries.nickname"
+            if "UNIQUE" in str(exc) and "nickname" in str(exc):
+                raise APIError("nickname is not unique")
+            raise
 
     @api_method
     async def api_toggle_ad_query_subscription(self, request: Request):

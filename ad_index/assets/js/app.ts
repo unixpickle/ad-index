@@ -17,6 +17,7 @@ class App {
         this.queryList = new QueryList(this.session)
         document.body.appendChild(this.queryList.element)
         this.queryList.onedit = (adQueryId) => this.showQueryEditor(adQueryId)
+        this.queryList.onadd = () => this.showQueryEditor()
 
         navigator.serviceWorker.register('/js/worker.js').then((reg) => {
             this.registration = reg
@@ -82,7 +83,7 @@ class App {
         )
     }
 
-    private showQueryEditor(adQueryId: string) {
+    private showQueryEditor(adQueryId?: string) {
         const editor = new QueryEditor(this.session, adQueryId)
         document.body.replaceChild(editor.element, this.queryList.element)
         editor.oncomplete = () => {

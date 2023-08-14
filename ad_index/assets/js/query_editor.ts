@@ -11,7 +11,7 @@ class QueryEditor {
     private actions: HTMLDivElement
     private info: AdQueryResult
 
-    constructor(private session: SessionInfo, private adQueryId: string) {
+    constructor(private session: SessionInfo, private adQueryId?: string) {
         this.element = document.createElement('div')
         this.element.setAttribute('class', 'query-editor')
 
@@ -33,10 +33,21 @@ class QueryEditor {
         const submit = document.createElement('button')
         submit.setAttribute('class', 'query-editor-actions-submit')
         submit.textContent = 'Save'
-        submit.addEventListener('click', () => this.attemptToSave())
+        submit.addEventListener('click', () => {
+            this.element.classList.add('disabled')
+            try {
+                this.attemptToSave()
+            } finally {
+                this.element.classList.remove('disabled')
+            }
+        })
         this.actions.appendChild(submit)
 
-        this.fetchInfo()
+        if (this.adQueryId) {
+            this.fetchInfo()
+        } else {
+            this.presentFields()
+        }
     }
 
     private async fetchInfo() {
@@ -65,6 +76,10 @@ class QueryEditor {
         this.query.setValue(info.query)
         this.filters.setValue(info.filters.join(','))
         this.subscribed.input.checked = info.subscribed
+        this.presentFields();
+    }
+
+    private presentFields() {
         this.element.replaceChildren(
             this.nickname.element,
             this.query.element,
@@ -87,13 +102,21 @@ class QueryEditor {
         }
         const filters = this.filters.input.value
         try {
-            await updateAdQuery(this.session.sessionId, {
-                nickname: this.nickname.input.value,
-                query: this.query.input.value,
-                filters: filters ? filters.split(',') : [],
-                adQueryId: this.info.adQueryId,
-                subscribed: this.subscribed.input.checked,
-            })
+            if (this.adQueryId) {
+                await updateAdQuery(this.session.sessionId, {
+                    nickname: this.nickname.input.value,
+                    query: this.query.input.value,
+                    filters: filters ? filters.split(',') : [],
+                    adQueryId: this.adQueryId,
+                    subscribed: this.subscribed.input.checked,
+                })
+            } else {
+                await insertAdQuery(this.session.sessionId, {
+                    nickname: this.nickname.input.value,
+                    query: this.query.input.value,
+                    filters: filters ? filters.split(',') : [],
+                }, this.subscribed.input.checked)
+            }
         } catch (e) {
             // TODO: more granular error handling here
             this.nickname.invalidWithReason(e.toString())

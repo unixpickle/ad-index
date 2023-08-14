@@ -1,4 +1,9 @@
-.query-list {
+.query-list-add-button-container {
+    text-align: center;
+    padding-top: 8px;
+}
+
+.query-list-items {
     display: flex;
     width: 100%;
     box-sizing: border-box;

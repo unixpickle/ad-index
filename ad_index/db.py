@@ -165,8 +165,7 @@ class DB:
                 client_subs.client_id = (
                     SELECT client_id FROM clients WHERE clients.session_hash = ?
                 )
-                {f'AND ad_queries.ad_query_id = ?' if ad_query_id is not None else ''}
-            )
+            ) {f'AND ad_queries.ad_query_id = ?' if ad_query_id is not None else ''}
             """,
             (hash, *([ad_query_id] if ad_query_id is not None else [])),
         )

@@ -19,6 +19,15 @@
     font-size: 0.8em;
 }
 
+.query-editor-field-validator {
+    color: #ff5555;
+    display: none;
+}
+
+.query-editor-field-invalid>.query-editor-field-validator {
+    display: block;
+}
+
 .query-editor-field-input {
     display: block;
     box-sizing: border-box;

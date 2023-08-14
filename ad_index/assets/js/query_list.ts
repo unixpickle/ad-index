@@ -1,11 +1,28 @@
 class QueryList {
     public element: HTMLDivElement
+    public items: HTMLDivElement
+
     public onedit: (adQueryId: string) => void
+    public onadd: () => void
+
     private loader: Loader
 
     constructor(private session: SessionInfo) {
         this.element = document.createElement('div')
         this.element.setAttribute('class', 'query-list')
+
+        const addButtonContainer = document.createElement('div')
+        addButtonContainer.setAttribute('class', 'query-list-add-button-container')
+        const addButton = document.createElement('button')
+        addButton.setAttribute('class', 'query-list-add-button')
+        addButton.textContent = 'Add Query'
+        addButton.addEventListener('click', () => this.onadd())
+        addButtonContainer.appendChild(addButton)
+        this.element.appendChild(addButtonContainer)
+
+        this.items = document.createElement('div')
+        this.items.setAttribute('class', 'query-list-items')
+        this.element.appendChild(this.items)
 
         this.loader = new Loader()
 
@@ -13,7 +30,7 @@ class QueryList {
     }
 
     public async reload() {
-        this.element.replaceChildren(this.loader.element)
+        this.items.replaceChildren(this.loader.element)
         let results
         try {
             results = await getAdQueries(this.session.sessionId)
@@ -28,7 +45,7 @@ class QueryList {
         const errorMsg = document.createElement('div')
         errorMsg.setAttribute('class', 'query-list-error-message')
         errorMsg.textContent = e
-        this.element.replaceChildren(errorMsg)
+        this.items.replaceChildren(errorMsg)
         return
     }
 
@@ -37,7 +54,7 @@ class QueryList {
             const empty = document.createElement('div')
             empty.setAttribute('class', 'query-list-empty-message')
             empty.textContent = 'No queries have been added yet.'
-            this.element.replaceChildren(empty)
+            this.items.replaceChildren(empty)
             return
         }
         const elements = results.map((info) => {
@@ -88,7 +105,7 @@ class QueryList {
             actions.setAttribute('class', 'query-list-item-actions')
             const buttons = ['Delete', 'Edit', 'View'].map((name) => {
                 const button = document.createElement('button')
-                button.textContent = name;
+                button.textContent = name
                 button.setAttribute('class', `query-list-item-actions-${name.toLowerCase()}`)
                 actions.appendChild(button)
                 return button
@@ -98,6 +115,6 @@ class QueryList {
 
             return elem
         })
-        this.element.replaceChildren(...elements)
+        this.items.replaceChildren(...elements)
     }
 }

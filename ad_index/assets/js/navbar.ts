@@ -18,7 +18,7 @@ class Navbar {
         const notificationsLabel = document.createElement('label')
         notificationsLabel.setAttribute('class', 'navbar-notifications-label')
         notificationsLabel.setAttribute('for', this.notificationsCheck.id)
-        notificationsLabel.innerText = 'Notifications';
+        notificationsLabel.innerText = 'Notifications'
         this.notificationsField.appendChild(this.notificationsCheck)
         this.notificationsField.appendChild(notificationsLabel)
         this.notificationsField.classList.add('disabled')
