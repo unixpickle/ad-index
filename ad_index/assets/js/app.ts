@@ -2,10 +2,97 @@ interface Window {
     app: App
 }
 
+type OnNav = (state: ViewState) => void
+
+abstract class ViewState {
+    constructor(public onnavigate: OnNav, protected session: SessionInfo) {
+    }
+
+    abstract get path(): string
+    abstract get element(): HTMLElement
+
+    swapFrom(state: ViewState): void {
+        const oldElem = state.element
+        oldElem.parentElement.replaceChild(this.element, oldElem)
+    }
+}
+
+class QueryListViewState extends ViewState {
+    private queryList: QueryList
+
+    constructor(onnavigate: OnNav, session: SessionInfo) {
+        super(onnavigate, session)
+        this.queryList = new QueryList(session)
+        this.queryList.onedit = (adQueryId) => {
+            this.onnavigate(new QueryEditorViewState(onnavigate, session, adQueryId, this))
+        }
+    }
+
+    get path(): string {
+        return ''
+    }
+
+    get element(): HTMLElement {
+        return this.queryList.element
+    }
+}
+
+class QueryEditorViewState extends ViewState {
+    private editor: QueryEditor
+
+    constructor(
+        onnavigate: OnNav,
+        session: SessionInfo,
+        private adQueryId?: string,
+        private previous?: ViewState,
+    ) {
+        super(onnavigate, session)
+        this.editor = new QueryEditor(session, adQueryId)
+
+        this.editor.oncancel = () => {
+            // Go to the previous view if possible.
+            if (this.previous) {
+                this.onnavigate(this.previous)
+            } else {
+                this.editor.oncomplete()
+            }
+        }
+        this.editor.oncomplete = () => {
+            this.onnavigate(new QueryListViewState(this.onnavigate, this.session))
+        }
+    }
+
+    get path(): string {
+        if (this.adQueryId) {
+            return `edit/${this.adQueryId}`
+        } else {
+            return `add`
+        }
+    }
+
+    get element(): HTMLElement {
+        return this.editor.element
+    }
+
+    swapFrom(state: ViewState): void {
+        super.swapFrom(state)
+    }
+}
+
+function viewStateFromPath(onnavigate: OnNav, session: SessionInfo, path: string): ViewState {
+    if (path == 'add') {
+        return new QueryEditorViewState(onnavigate, session)
+    } else if (path.startsWith('edit/')) {
+        return new QueryEditorViewState(onnavigate, session, path.substring(5))
+    } else {
+        return new QueryListViewState(onnavigate, session)
+    }
+}
+
 class App {
     private registration: ServiceWorkerRegistration
     private navbar: Navbar
-    private queryList: QueryList
+    private viewState: ViewState
 
     constructor(private session: SessionInfo) {
         this.registration = null
@@ -14,10 +101,14 @@ class App {
         document.body.appendChild(this.navbar.element)
         this.navbar.ontogglenotifications = (enabled) => this.toggleNotifications(enabled)
 
-        this.queryList = new QueryList(this.session)
-        document.body.appendChild(this.queryList.element)
-        this.queryList.onedit = (adQueryId) => this.showQueryEditor(adQueryId)
-        this.queryList.onadd = () => this.showQueryEditor()
+        const onNav = (view: ViewState) => this.navigateTo(view)
+        this.viewState = viewStateFromPath(onNav, this.session, location.hash ? location.hash.substring(1) : '')
+        document.body.appendChild(this.viewState.element)
+        window.addEventListener('popstate', (_) => {
+            const view = viewStateFromPath(onNav, this.session, location.hash ? location.hash.substring(1) : '')
+            view.swapFrom(this.viewState)
+            this.viewState = view
+        })
 
         navigator.serviceWorker.register('/js/worker.js').then((reg) => {
             this.registration = reg
@@ -32,6 +123,12 @@ class App {
         }).catch((e) => {
             this.showError('error setting up and syncing service worker: ' + e)
         })
+    }
+
+    navigateTo(view: ViewState) {
+        view.swapFrom(this.viewState)
+        this.viewState = view
+        history.pushState(null, '', '#' + view.path)
     }
 
     showError(e: string) {
@@ -81,18 +178,6 @@ class App {
             this.session.sessionId,
             sub ? JSON.stringify(sub.toJSON()) : null,
         )
-    }
-
-    private showQueryEditor(adQueryId?: string) {
-        const editor = new QueryEditor(this.session, adQueryId)
-        document.body.replaceChild(editor.element, this.queryList.element)
-        editor.oncomplete = () => {
-            document.body.replaceChild(this.queryList.element, editor.element)
-            this.queryList.reload()
-        }
-        editor.oncancel = () => {
-            document.body.replaceChild(this.queryList.element, editor.element)
-        }
     }
 }
 
