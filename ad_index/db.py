@@ -267,11 +267,13 @@ class DB:
 
     @transaction
     async def delete_ad_query(self, id: int) -> bool:
-        return (
+        deleted = (
             await self._conn.execute(
                 "DELETE FROM ad_queries WHERE ad_query_id=?", (id,)
             )
         ).rowcount != 0
+        await self._conn.execute("DELETE FROM client_subs WHERE ad_query_id=?", (id,))
+        return deleted
 
     @transaction
     async def create_session(

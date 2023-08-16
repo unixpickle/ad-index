@@ -76,6 +76,11 @@ async function updateAdQuery(sessionId: string, info: AdQueryResult) {
     return extractSuccess(await (await fetch(uri)).json())
 }
 
+async function deleteAdQuery(adQueryId: string) {
+    const uri = `/api/delete_ad_query?ad_query_id=${encodeURIComponent(adQueryId)}`
+    return extractSuccess(await (await fetch(uri)).json())
+}
+
 async function toggleAdQuerySubscription(sessionId: string, adQueryId: string, subscribed: boolean) {
     const uri = (
         `/api/toggle_ad_query_subscription?session_id=${encodeURIComponent(sessionId)}`

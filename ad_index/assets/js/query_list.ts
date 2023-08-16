@@ -111,6 +111,19 @@ class QueryList {
                 return button
             })
             buttons[1].addEventListener('click', () => this.onedit(info.adQueryId))
+            buttons[0].addEventListener('click', async () => {
+                if (!confirm(`Really delete "${info.nickname}"?`)) {
+                    return
+                }
+                this.items.replaceChildren(this.loader.element)
+                try {
+                    await deleteAdQuery(info.adQueryId)
+                } catch (e) {
+                    this.showError(e)
+                    return
+                }
+                this.reload()
+            })
             elem.appendChild(actions)
 
             return elem

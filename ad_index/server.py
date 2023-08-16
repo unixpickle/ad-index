@@ -75,6 +75,7 @@ class Server:
         router.add_get("/api/get_ad_query", self.api_get_ad_query)
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
         router.add_get("/api/update_ad_query", self.api_update_ad_query)
+        router.add_get("/api/delete_ad_query", self.api_delete_ad_query)
         router.add_get(
             "/api/toggle_ad_query_subscription", self.api_toggle_ad_query_subscription
         )
@@ -173,6 +174,11 @@ class Server:
             if "UNIQUE" in str(exc) and "nickname" in str(exc):
                 raise APIError("nickname is not unique")
             raise
+
+    @api_method
+    async def api_delete_ad_query(self, request: Request) -> bool:
+        ad_query_id = request.query.getone("ad_query_id")
+        return await self.db.delete_ad_query(ad_query_id)
 
     @api_method
     async def api_toggle_ad_query_subscription(self, request: Request):

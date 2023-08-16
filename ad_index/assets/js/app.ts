@@ -26,6 +26,9 @@ class QueryListViewState extends ViewState {
         this.queryList.onedit = (adQueryId) => {
             this.onnavigate(new QueryEditorViewState(onnavigate, session, adQueryId, this))
         }
+        this.queryList.onadd = () => {
+            this.onnavigate(new QueryEditorViewState(onnavigate, session, null, this))
+        }
     }
 
     get path(): string {
