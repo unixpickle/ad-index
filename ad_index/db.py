@@ -13,6 +13,8 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Sequence,
+    Set,
     TypeVar,
     Union,
 )
@@ -82,9 +84,12 @@ def transaction(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[An
 
 
 class DB:
-    def __init__(self, conn: aiosqlite.Connection):
+    def __init__(
+        self, conn: aiosqlite.Connection, text_hash_expiration: int = 60 * 60 * 24 * 5
+    ):
         self._conn = conn
         self._lock = asyncio.Lock()
+        self.text_hash_expiration = text_hash_expiration
 
     @classmethod
     @asynccontextmanager
@@ -141,12 +146,44 @@ class DB:
         )
         await self._conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS ad_content (
+                ad_query_id   INTEGER   NOT NULL,
+                id            TEXT      NOT NULL,
+                account_name  TEXT      NOT NULL,
+                account_url   TEXT      NOT NULL,
+                start_date    INTEGER   NOT NULL,
+                last_seen     INTEGER   NOT NULL,
+                text_hash     CHAR(64)  NOT NULL,
+                text          TEXT      NOT NULL,
+                screenshot    BLOB      NOT NULL,
+                UNIQUE(ad_query_id, id)
+            );
+            """
+        )
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ad_content_text (
+                ad_query_id  INTEGER   NOT NULL,
+                text_hash    CHAR(64)  NOT NULL,
+                text         TEXT      NOT NULL,
+                last_seen    INTEGER   PRIMARY KEY,
+                UNIQUE(ad_query_id, text_hash)
+            );
+            """
+        )
+        await self._conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS clients_session_hash ON clients(session_hash)
             """
         )
         await self._conn.execute(
             """
             CREATE INDEX IF NOT EXISTS push_queue_retry_time ON push_queue(retry_time)
+            """
+        )
+        await self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ad_content_text_seen_date ON ad_content_text(last_seen)
             """
         )
 
@@ -273,6 +310,10 @@ class DB:
             )
         ).rowcount != 0
         await self._conn.execute("DELETE FROM client_subs WHERE ad_query_id=?", (id,))
+        await self._conn.execute("DELETE FROM ad_content WHERE ad_query_id=?", (id,))
+        await self._conn.execute(
+            "DELETE FROM ad_content_text WHERE ad_query_id=?", (id,)
+        )
         return deleted
 
     @transaction
@@ -341,6 +382,107 @@ class DB:
     @transaction
     async def push_queue_finish(self, id: int):
         await self._conn.execute("DELETE FROM push_queue WHERE id=?", (id,))
+
+    @transaction
+    async def unseen_ad_ids(self, ad_query_id: int, ids: Sequence[str]) -> Set[str]:
+        cursor = await self._conn.execute(
+            "SELECT id from ad_content WHERE ad_query_id=? AND id IN json_each(?)",
+            (ad_query_id, json.dumps(list(ids))),
+        )
+        seen = set()
+        async for row in cursor:
+            seen.add(row[0])
+        return set(x for x in ids if x not in seen)
+
+    @transaction
+    async def insert_ad(
+        self,
+        ad_query_id: int,
+        id: str,
+        account_name: str,
+        account_url: str,
+        start_date: int,
+        text: str,
+        screenshot: bytes,
+    ) -> bool:
+        if await self._fetchone(
+            "SELECT COUNT(*) FROM ad_queries WHERE ad_query_id=?",
+            (ad_query_id,),
+        ) != (1,):
+            return False
+        text_hash = hash_session_id(text.lower())
+        inserted = await self._conn.execute_insert(
+            """
+            INSERT OR IGNORE INTO ad_content (
+                ad_query_id,
+                id,
+                account_name,
+                account_url,
+                start_date,
+                text_hash,
+                text,
+                screenshot,
+                last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, STRFTIME('%s'))
+            """,
+            (
+                ad_query_id,
+                id,
+                account_name,
+                account_url,
+                start_date,
+                text_hash,
+                text,
+                screenshot,
+            ),
+        )
+        if not inserted:
+            return False
+        (count,) = await self._fetchone(
+            """
+            SELECT COUNT(*) FROM ad_content_text
+            WHERE ad_query_id=? AND text_hash=? AND last_seen > STRFTIME('%s') - ?
+            """,
+            (
+                ad_query_id,
+                text_hash,
+                self.text_hash_expiration,
+            ),
+        )
+        await self._conn.execute(
+            """
+            REPLACE INTO ad_content_text
+            (ad_query_id, text_hash, text, last_seen)
+            VALUES (?, ?, ?, STRFTIME('%s'))
+            """,
+            (ad_query_id, text_hash, text),
+        )
+        if not count:
+            notify_message = json.dumps(
+                dict(
+                    ad_query_id=ad_query_id,
+                    id=id,
+                    account_name=account_name,
+                    account_url=account_url,
+                    text=text,
+                )
+            )
+            await self._conn.execute(
+                """
+                INSERT INTO push_queue (client_id, message, retry_time, retries)
+                SELECT client_id, ?, STRFTIME('%s'), 0
+                FROM client_subs
+                WHERE ad_query_id=?
+                """,
+                (notify_message, ad_query_id),
+            )
+        return True
+
+    async def _fetchone(self, *args) -> sqlite3.Row:
+        results = list(await self._conn.execute_fetchall(*args))
+        if len(results) != 1:
+            raise sqlite3.OperationalError(f"expected 1 result but got {len(results)}")
+        return results[0]
 
     async def _retry(self, fn: Callable[[], Awaitable[R]]) -> R:
         while True:
