@@ -184,21 +184,34 @@ class App {
     }
 }
 
-window.addEventListener('load', () => {
-    if (localStorage.getItem('sessionId')) {
-        const session = {
-            sessionId: localStorage.getItem('sessionId'),
-            vapidPub: localStorage.getItem('vapidPub'),
+window.addEventListener('load', async () => {
+    const loader = new Loader()
+    document.body.appendChild(loader.element)
+    let session
+    try {
+        if (localStorage.getItem('sessionId')) {
+            session = {
+                sessionId: localStorage.getItem('sessionId'),
+                vapidPub: localStorage.getItem('vapidPub'),
+            }
+        } else {
+            session = await createSession()
         }
-        window.app = new App(session)
-    } else {
-        createSession().then((session) => {
-            window.app = new App(session)
-        }).catch((e) => {
-            // TODO: handle this global error here.
-            console.log('Error creating session: ' + e)
-            alert('Failed to create session. Please refresh.')
-        })
+    } catch (e) {
+        document.body.removeChild(loader.element)
+        const globalError = document.createElement('div')
+        globalError.setAttribute('class', 'global-error')
+        const errorHeader = document.createElement('h1')
+        errorHeader.setAttribute('class', 'global-error-header')
+        errorHeader.textContent = 'Error loading page'
+        globalError.appendChild(errorHeader)
+        const errorBody = document.createElement('div')
+        errorBody.setAttribute('class', 'global-error-body')
+        errorBody.textContent = e.toString()
+        globalError.appendChild(errorBody)
+        document.body.appendChild(globalError)
+        return
     }
-
+    document.body.removeChild(loader.element)
+    window.app = new App(session)
 })

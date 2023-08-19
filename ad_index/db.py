@@ -63,6 +63,7 @@ class ClientPushInfo:
 @dataclass
 class PushQueueItem:
     id: int
+    client_id: int
     push_info: ClientPushInfo
     message: str
     retries: int
@@ -380,7 +381,16 @@ class DB:
         )
 
     @transaction
-    async def push_queue_finish(self, id: int):
+    async def push_queue_finish(self, id: int, unsub_client: bool = False):
+        if unsub_client:
+            await self._conn.execute(
+                """
+                UPDATE clients SET push_sub=NULL WHERE client_id=(
+                    SELECT client_id FROM push_queue WHERE id=?
+                )
+                """,
+                (id,),
+            )
         await self._conn.execute("DELETE FROM push_queue WHERE id=?", (id,))
 
     @transaction
@@ -503,16 +513,7 @@ def hash_session_id(session_id: Union[str, bytes]) -> str:
 
 async def main():
     async with DB.connect("test.db") as db:
-        ad_id = await db.insert_ad_query(
-            AdQuery(
-                ad_query_id=None,
-                nickname="Lilly",
-                query="lilly pulitzer",
-                filters=["sale", "% off", "discount", "coupon", "code"],
-            )
-        )
-        print([x async for x in db.ad_queries()])
-        await db.delete_ad_query(ad_id)
+        await db.push_queue_finish(0, True)
 
 
 if __name__ == "__main__":

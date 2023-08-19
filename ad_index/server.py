@@ -12,7 +12,7 @@ from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import DB, AdQueryBase, AdQueryResult, hash_session_id
+from .db import DB, AdQueryResult, hash_session_id
 from .notifier import Notifier
 
 
@@ -212,8 +212,7 @@ class Server:
             except:
                 traceback.print_exc()
             if status == 201 or item.retries >= self.max_message_retries:
-                await self.db.push_queue_finish(item.id)
-                # TODO: unsubscribe push notifications if the retries were exceeded.
+                await self.db.push_queue_finish(item.id, unsub_client=status != 201)
 
 
 def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQueryResult]:

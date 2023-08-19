@@ -17,3 +17,27 @@ body {
     opacity: 0.5;
     pointer-events: none;
 }
+
+.global-error {
+    width: calc(100% - 20px);
+    max-width: 300px;
+    margin: -38px auto 10px auto;
+    padding: 10px;
+    background-color: white;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.global-error-header {
+    padding: 0;
+    margin: 0 0 10px 0;
+    font-size: 1em;
+    font-weight: bolder;
+}
+
+.global-error-text {
+    padding: 0;
+    margin: 0;
+    font-size: 1em;
+    color: #ff5555;
+}

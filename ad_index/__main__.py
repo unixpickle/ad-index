@@ -18,7 +18,7 @@ async def main():
     parser.add_argument("--asset-dir", type=str, default=DEFAULT_ASSET_DIR)
     parser.add_argument("--vapid-sub", type=str, default="mailto:alex@aqnichol.com")
     parser.add_argument("--max-message-retries", type=int, default=3)
-    parser.add_argument("--message-retry-interval", type=int, default=120)
+    parser.add_argument("--message-retry-interval", type=int, default=60 * 30)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
