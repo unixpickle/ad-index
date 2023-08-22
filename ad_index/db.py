@@ -63,7 +63,6 @@ class ClientPushInfo:
 @dataclass
 class PushQueueItem:
     id: int
-    client_id: int
     push_info: ClientPushInfo
     message: str
     retries: int
@@ -85,12 +84,9 @@ def transaction(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[An
 
 
 class DB:
-    def __init__(
-        self, conn: aiosqlite.Connection, text_hash_expiration: int = 60 * 60 * 24 * 5
-    ):
+    def __init__(self, conn: aiosqlite.Connection):
         self._conn = conn
         self._lock = asyncio.Lock()
-        self.text_hash_expiration = text_hash_expiration
 
     @classmethod
     @asynccontextmanager
@@ -109,6 +105,9 @@ class DB:
                 nickname     TEXT     NOT NULL,
                 query        TEXT     NOT NULL,
                 filters      TEXT     NOT NULL,
+                next_pull    INTEGER  NOT NULL,
+                last_pull    INTEGER,
+                last_error   TEXT,
                 UNIQUE(nickname)
             )
             """
@@ -197,13 +196,13 @@ class DB:
             f"""
             SELECT ad_queries.ad_query_id, nickname, query, filters, client_subs.client_id
             FROM ad_queries
-            LEFT JOIN client_subs ON client_subs.ad_query_id = ad_queries.ad_query_id
-            WHERE (
-                client_subs.client_id IS NULL OR
-                client_subs.client_id = (
+            LEFT JOIN client_subs ON (
+                client_subs.ad_query_id = ad_queries.ad_query_id
+                AND client_subs.client_id = (
                     SELECT client_id FROM clients WHERE clients.session_hash = ?
                 )
-            ) {f'AND ad_queries.ad_query_id = ?' if ad_query_id is not None else ''}
+            )
+            {f'WHERE ad_queries.ad_query_id = ?' if ad_query_id is not None else ''}
             """,
             (hash, *([ad_query_id] if ad_query_id is not None else [])),
         )
@@ -235,7 +234,14 @@ class DB:
             if client_id is None:
                 return None
         result = await self._conn.execute_insert(
-            "INSERT INTO ad_queries (nickname, query, filters) VALUES (?, ?, ?)",
+            """
+            INSERT INTO ad_queries (
+                nickname,
+                query,
+                filters,
+                next_pull
+            ) VALUES (?, ?, ?, STRFTIME('%s'))
+            """,
             (q.nickname, q.query, json.dumps(q.filters)),
         )
         (id,) = result
@@ -252,11 +258,17 @@ class DB:
     ) -> Dict[str, Any]:
         try:
             updated_data = (
-                await self._conn.execute(
-                    "UPDATE ad_queries SET nickname=?, query=?, filters=? WHERE ad_query_id=?",
-                    (q.nickname, q.query, json.dumps(q.filters), q.ad_query_id),
-                )
-            ).rowcount != 0
+                (
+                    await self._conn.execute(
+                        """
+                    UPDATE ad_queries SET nickname=?, query=?, filters=?, next_pull=STRFTIME('%s')
+                    WHERE ad_query_id=?
+                    """,
+                        (q.nickname, q.query, json.dumps(q.filters), q.ad_query_id),
+                    )
+                ).rowcount
+                != 0
+            )
         except sqlite3.IntegrityError as exc:
             if "UNIQUE" in str(exc):
                 raise DataArgumentError("name is already in use")
@@ -265,6 +277,42 @@ class DB:
             q.ad_query_id, session_id, q.subscribed
         )
         return dict(updated_data=updated_data, updated_sub=updated_sub)
+
+    @transaction
+    async def ad_query_next(self, refresh_interval: int) -> Optional[AdQuery]:
+        cursor = await self._conn.execute(
+            """
+            SELECT ad_query_id, nickname, query, filters
+            FROM ad_queries
+            WHERE next_pull < STRFTIME('%s')
+            ORDER BY next_pull
+            LIMIT 1
+            """,
+        )
+        row = None
+        async for row in cursor:
+            break
+        if row is None:
+            return None
+        id, nickname, query, filters = row
+        await self._conn.execute(
+            "UPDATE ad_queries SET next_pull=STRFTIME('%s')+? WHERE ad_query_id=?",
+            (refresh_interval, id),
+        )
+        return AdQuery(
+            nickname=nickname, query=query, filters=json.loads(filters), ad_query_id=id
+        )
+
+    @transaction
+    async def ad_query_finished_pull(
+        self, ad_query_id: int, error: Optional[str] = None
+    ):
+        await self._conn.execute(
+            """
+            UPDATE ad_queries SET last_pull=STRFTIME('%s'), last_error=? WHERE ad_query_id=?
+            """,
+            (error, ad_query_id),
+        )
 
     @transaction
     async def toggle_ad_query_subscription(
@@ -396,7 +444,10 @@ class DB:
     @transaction
     async def unseen_ad_ids(self, ad_query_id: int, ids: Sequence[str]) -> Set[str]:
         cursor = await self._conn.execute(
-            "SELECT id from ad_content WHERE ad_query_id=? AND id IN json_each(?)",
+            """
+            SELECT id FROM ad_content
+            WHERE ad_query_id=? AND id IN (SELECT value FROM json_each(?))
+            """,
             (ad_query_id, json.dumps(list(ids))),
         )
         seen = set()
@@ -414,6 +465,7 @@ class DB:
         start_date: int,
         text: str,
         screenshot: bytes,
+        text_expiration: int,
     ) -> bool:
         if await self._fetchone(
             "SELECT COUNT(*) FROM ad_queries WHERE ad_query_id=?",
@@ -423,7 +475,7 @@ class DB:
         text_hash = hash_session_id(text.lower())
         inserted = await self._conn.execute_insert(
             """
-            INSERT OR IGNORE INTO ad_content (
+            INSERT OR REPLACE INTO ad_content (
                 ad_query_id,
                 id,
                 account_name,
@@ -456,12 +508,12 @@ class DB:
             (
                 ad_query_id,
                 text_hash,
-                self.text_hash_expiration,
+                text_expiration,
             ),
         )
         await self._conn.execute(
             """
-            REPLACE INTO ad_content_text
+            INSERT OR REPLACE INTO ad_content_text
             (ad_query_id, text_hash, text, last_seen)
             VALUES (?, ?, ?, STRFTIME('%s'))
             """,
@@ -487,6 +539,42 @@ class DB:
                 (notify_message, ad_query_id),
             )
         return True
+
+    @transaction
+    async def cleanup_ads(self, max_ads: int, text_expiration: int):
+        large_queries = await self._conn.execute(
+            """
+            SELECT ad_query_id FROM ad_content
+            WHERE COUNT(*) > ?
+            GROUP BY ad_query_id
+            """
+        )
+        for (ad_query_id,) in await large_queries:
+            await self._conn.execute(
+                """
+                DELETE FROM ad_content WHERE rowid IN (
+                    SELECT rowid FROM ad_content
+                    WHERE ad_query_id=?
+                    ORDER BY (last_seen, start_time) DESC
+                    OFFSET ?
+                )
+                """,
+                (ad_query_id, max_ads),
+            )
+        # We retain text hashes even after the ads are gone to prevent duplicate
+        # notifications over short spans of time.
+        await self._conn.execute(
+            """
+            DELETE FROM ad_content_text WHERE last_seen + ? < STRFTIME('%s') and NOT EXISTS (
+                SELECT 1 FROM ad_content
+                WHERE (
+                    ad_content.ad_query_id = ad_content_text.ad_query_id
+                    AND ad_content.text_hash = ad_content_text.text_hash
+                )
+            )
+            """,
+            (text_expiration,),
+        )
 
     async def _fetchone(self, *args) -> sqlite3.Row:
         results = list(await self._conn.execute_fetchall(*args))

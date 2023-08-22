@@ -1,9 +1,10 @@
 import asyncio
+import io
 import json
 import os
 import sqlite3
 import traceback
-from typing import Any, Awaitable, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from aiohttp import web
 from aiohttp.web import Request, UrlDispatcher
@@ -12,7 +13,7 @@ from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import DB, AdQueryResult, hash_session_id
+from .db import DB, AdQuery, AdQueryResult, hash_session_id
 from .notifier import Notifier
 
 
@@ -52,12 +53,16 @@ def rewrite_db_errors(
 class Server:
     def __init__(
         self,
+        *,
         asset_dir: str,
         db: DB,
         client: Client,
         notifier: Notifier,
         max_message_retries: int,
         message_retry_interval: int,
+        refresh_interval: int,
+        ad_text_expiration: int,
+        max_ad_history: int,
     ):
         self.asset_dir = asset_dir
         self.db = db
@@ -65,7 +70,11 @@ class Server:
         self.notifier = notifier
         self.max_message_retries = max_message_retries
         self.message_retry_interval = message_retry_interval
+        self.refresh_interval = refresh_interval
+        self.ad_text_expiration = ad_text_expiration
+        self.max_ad_history = max_ad_history
         asyncio.create_task(self._push_queue_loop())
+        asyncio.create_task(self._query_loop())
 
     def add_routes(self, router: UrlDispatcher):
         router.add_get("/", self.index)
@@ -213,6 +222,54 @@ class Server:
                 traceback.print_exc()
             if status == 201 or item.retries >= self.max_message_retries:
                 await self.db.push_queue_finish(item.id, unsub_client=status != 201)
+
+    async def _query_loop(self):
+        while True:
+            query: Optional[AdQuery] = await self.db.ad_query_next(
+                refresh_interval=self.refresh_interval
+            )
+            if query is None:
+                await asyncio.sleep(10.0)
+                continue
+            try:
+                results = [
+                    result
+                    for result in await self.client.query(query.query)
+                    if not len(query.filters)
+                    or any(x.tolower() in result.text.lower() for x in query.filters)
+                ]
+            except Exception as exc:
+                self.db.ad_query_finished_pull(
+                    ad_query_id=query.ad_query_id, error=str(exc)
+                )
+                continue
+            new_ids = await self.db.unseen_ad_ids(
+                query.ad_query_id, [x.id for x in results]
+            )
+            screenshots = await self.client.screenshot_ids(list(new_ids))
+            print(sorted(screenshots.keys()))
+            print(sorted(new_ids))
+            id_to_result = {x.id: x for x in results}
+            for id in new_ids:
+                result = id_to_result[id]
+                data = io.BytesIO()
+                if id in screenshots:
+                    screenshot = screenshots[id]
+                    screenshot.convert("RGB").save(data, format="JPEG", quality=85)
+                await self.db.insert_ad(
+                    ad_query_id=query.ad_query_id,
+                    id=result.id,
+                    account_name=result.account_name,
+                    account_url=result.account_url,
+                    start_date=result.start_date,
+                    text=result.text,
+                    screenshot=data.getvalue(),
+                    text_expiration=self.ad_text_expiration,
+                )
+            await self.db.ad_query_finished_pull(ad_query_id=query.ad_query_id)
+            await self.db.cleanup_ads(
+                max_ads=self.max_ad_history, text_expiration=self.ad_text_expiration
+            )
 
 
 def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQueryResult]:

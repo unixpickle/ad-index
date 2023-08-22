@@ -73,6 +73,8 @@ class Client:
         )
 
     def _screenshot_ids(self, ids: Sequence[str]) -> Dict[str, Image.Image]:
+        if not len(ids):
+            return {}
         main_elem_query = (
             "//*["
             + " or ".join(f"text()='ID: {id}'" for id in ids)
@@ -98,6 +100,8 @@ class Client:
                 by=By.XPATH, value="//*[starts-with(text(), 'ID: ')]"
             )
             id = id_item.text.split(" ")[1]
+            if id not in ids:
+                continue
             content = main_elem.find_element(
                 by=By.XPATH, value="hr/following-sibling::*"
             )

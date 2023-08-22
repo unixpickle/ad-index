@@ -196,6 +196,8 @@ window.addEventListener('load', async () => {
             }
         } else {
             session = await createSession()
+            localStorage.setItem('sessionId', session.sessionId)
+            localStorage.setItem('vapidPub', session.vapidPub)
         }
     } catch (e) {
         document.body.removeChild(loader.element)

@@ -19,6 +19,9 @@ async def main():
     parser.add_argument("--vapid-sub", type=str, default="mailto:alex@aqnichol.com")
     parser.add_argument("--max-message-retries", type=int, default=3)
     parser.add_argument("--message-retry-interval", type=int, default=60 * 30)
+    parser.add_argument("--refresh-interval", type=int, default=60 * 30)
+    parser.add_argument("--ad-text-expiration", type=int, default=60 * 60 * 24 * 5)
+    parser.add_argument("--max-ad-history", type=int, default=50)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
@@ -32,6 +35,9 @@ async def main():
                 notifier=Notifier(vapid_sub=args.vapid_sub),
                 max_message_retries=args.max_message_retries,
                 message_retry_interval=args.message_retry_interval,
+                refresh_interval=args.refresh_interval,
+                ad_text_expiration=args.ad_text_expiration,
+                max_ad_history=args.max_ad_history,
             )
             app = web.Application()
             server.add_routes(app.router)
