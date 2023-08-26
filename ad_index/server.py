@@ -224,6 +224,9 @@ class Server:
                 await self.db.push_queue_finish(item.id, unsub_client=status != 201)
 
     async def _query_loop(self):
+        await self.db.cleanup_ads(
+            max_ads=self.max_ad_history, text_expiration=self.ad_text_expiration
+        )
         while True:
             query: Optional[AdQuery] = await self.db.ad_query_next(
                 refresh_interval=self.refresh_interval

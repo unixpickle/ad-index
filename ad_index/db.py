@@ -166,7 +166,7 @@ class DB:
                 ad_query_id  INTEGER   NOT NULL,
                 text_hash    CHAR(64)  NOT NULL,
                 text         TEXT      NOT NULL,
-                last_seen    INTEGER   PRIMARY KEY,
+                last_seen    INTEGER   NOT NULL,
                 UNIQUE(ad_query_id, text_hash)
             );
             """
@@ -542,21 +542,22 @@ class DB:
 
     @transaction
     async def cleanup_ads(self, max_ads: int, text_expiration: int):
-        large_queries = await self._conn.execute(
+        large_queries = await self._conn.execute_fetchall(
             """
             SELECT ad_query_id FROM ad_content
-            WHERE COUNT(*) > ?
             GROUP BY ad_query_id
-            """
+            HAVING COUNT(*) > ?
+            """,
+            (max_ads,),
         )
-        for (ad_query_id,) in await large_queries:
+        for (ad_query_id,) in large_queries:
             await self._conn.execute(
                 """
                 DELETE FROM ad_content WHERE rowid IN (
                     SELECT rowid FROM ad_content
                     WHERE ad_query_id=?
-                    ORDER BY (last_seen, start_time) DESC
-                    OFFSET ?
+                    ORDER BY last_seen DESC, start_date DESC
+                    LIMIT -1 OFFSET ?
                 )
                 """,
                 (ad_query_id, max_ads),

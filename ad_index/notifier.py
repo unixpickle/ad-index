@@ -17,13 +17,19 @@ class Notifier:
         self.executor = ThreadPoolExecutor(1)
         self.session = requests.Session()
 
-    async def notify(self, info: ClientPushInfo, message: str) -> int:
-        return await asyncio.get_running_loop().run_in_executor(
+    async def notify(self, info: ClientPushInfo, message: str):
+        await asyncio.get_running_loop().run_in_executor(
             self.executor,
-            lambda: webpush(
+            lambda: send_webpush(
                 json.loads(info.push_sub),
                 data=message,
                 vapid_private_key=Vapid.from_pem(info.vapid_priv),
                 vapid_claims={"sub": self.vapid_sub},
-            ).status_code,
+            ),
         )
+
+
+def send_webpush(*args, **kwargs):
+    code = webpush(*args, **kwargs).status_code
+    if code != 201:
+        raise RuntimeError(f"unexpected status code: {code}")

@@ -93,13 +93,10 @@ function viewStateFromPath(onnavigate: OnNav, session: SessionInfo, path: string
 }
 
 class App {
-    private registration: ServiceWorkerRegistration
     private navbar: Navbar
     private viewState: ViewState
 
-    constructor(private session: SessionInfo) {
-        this.registration = null
-
+    constructor(private registration: ServiceWorkerRegistration, private session: SessionInfo) {
         this.navbar = new Navbar()
         document.body.appendChild(this.navbar.element)
         this.navbar.ontogglenotifications = (enabled) => this.toggleNotifications(enabled)
@@ -113,10 +110,7 @@ class App {
             this.viewState = view
         })
 
-        navigator.serviceWorker.register('/js/worker.js').then((reg) => {
-            this.registration = reg
-            return reg.pushManager.getSubscription()
-        }).then((sub) => {
+        registration.pushManager.getSubscription().then((sub) => {
             this.navbar.setNotificationsEnabled(!!sub, true)
 
             // This step is not strictly necessary, but it is possible that we
@@ -124,7 +118,7 @@ class App {
             // the user manually unsubscribed to notifications.
             return this.syncWebPushSubscription(sub)
         }).catch((e) => {
-            this.showError('error setting up and syncing service worker: ' + e)
+            this.showError('Error setting up and syncing service worker: ' + e)
         })
     }
 
@@ -187,17 +181,29 @@ class App {
 window.addEventListener('load', async () => {
     const loader = new Loader()
     document.body.appendChild(loader.element)
+
+
     let session
+    let registration
+
     try {
+        registration = await navigator.serviceWorker.register('/js/worker.js')
+        const sub = await registration.pushManager.getSubscription()
+
         if (localStorage.getItem('sessionId')) {
             session = {
                 sessionId: localStorage.getItem('sessionId'),
                 vapidPub: localStorage.getItem('vapidPub'),
             }
+            // TODO: make sure session is still valid.
         } else {
             session = await createSession()
             localStorage.setItem('sessionId', session.sessionId)
             localStorage.setItem('vapidPub', session.vapidPub)
+            if (sub) {
+                // We would need to resubscribe with the new VAPID.
+                await sub.unsubscribe()
+            }
         }
     } catch (e) {
         document.body.removeChild(loader.element)
@@ -215,5 +221,5 @@ window.addEventListener('load', async () => {
         return
     }
     document.body.removeChild(loader.element)
-    window.app = new App(session)
+    window.app = new App(registration, session)
 })
