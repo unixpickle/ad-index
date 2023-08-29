@@ -97,7 +97,7 @@ class Client:
         images = {}
         for main_elem in self.driver.find_elements(by=By.XPATH, value=main_elem_query):
             id_item = main_elem.find_element(
-                by=By.XPATH, value="//*[starts-with(text(), 'ID: ')]"
+                by=By.XPATH, value=".//*[starts-with(text(), 'ID: ')]"
             )
             id = id_item.text.split(" ")[1]
             if id not in ids:

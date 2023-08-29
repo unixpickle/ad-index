@@ -10,7 +10,6 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
-    Iterator,
     List,
     Optional,
     Sequence,
@@ -284,7 +283,7 @@ class DB:
             """
             SELECT ad_query_id, nickname, query, filters
             FROM ad_queries
-            WHERE next_pull < STRFTIME('%s')
+            WHERE next_pull < CAST(STRFTIME('%s') AS INTEGER)
             ORDER BY next_pull
             LIMIT 1
             """,
@@ -407,7 +406,7 @@ class DB:
                 clients.vapid_priv
             FROM push_queue
             LEFT JOIN clients ON clients.client_id = push_queue.client_id
-            WHERE retry_time <= STRFTIME('%s')
+            WHERE retry_time <= CAST(STRFTIME('%s') AS INTEGER)
             ORDER BY retry_time
             """,
         )
@@ -566,11 +565,15 @@ class DB:
         # notifications over short spans of time.
         await self._conn.execute(
             """
-            DELETE FROM ad_content_text WHERE last_seen + ? < STRFTIME('%s') and NOT EXISTS (
-                SELECT 1 FROM ad_content
-                WHERE (
-                    ad_content.ad_query_id = ad_content_text.ad_query_id
-                    AND ad_content.text_hash = ad_content_text.text_hash
+            DELETE FROM ad_content_text
+            WHERE (
+                last_seen < STRFTIME('%s') - ?
+                AND NOT EXISTS (
+                    SELECT 1 FROM ad_content
+                    WHERE (
+                        ad_content.ad_query_id = ad_content_text.ad_query_id
+                        AND ad_content.text_hash = ad_content_text.text_hash
+                    )
                 )
             )
             """,

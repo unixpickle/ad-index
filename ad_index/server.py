@@ -241,17 +241,16 @@ class Server:
                     if not len(query.filters)
                     or any(x.tolower() in result.text.lower() for x in query.filters)
                 ]
+                new_ids = await self.db.unseen_ad_ids(
+                    query.ad_query_id, [x.id for x in results]
+                )
+                screenshots = await self.client.screenshot_ids(list(new_ids))
             except Exception as exc:
+                traceback.print_exc()
                 self.db.ad_query_finished_pull(
                     ad_query_id=query.ad_query_id, error=str(exc)
                 )
                 continue
-            new_ids = await self.db.unseen_ad_ids(
-                query.ad_query_id, [x.id for x in results]
-            )
-            screenshots = await self.client.screenshot_ids(list(new_ids))
-            print(sorted(screenshots.keys()))
-            print(sorted(new_ids))
             id_to_result = {x.id: x for x in results}
             for id in new_ids:
                 result = id_to_result[id]
