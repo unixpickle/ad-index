@@ -29,6 +29,9 @@ class QueryListViewState extends ViewState {
         this.queryList.onadd = () => {
             this.onnavigate(new QueryEditorViewState(onnavigate, session, null, this))
         }
+        this.queryList.onview = (adQueryId) => {
+            this.onnavigate(new AdListViewState(onnavigate, session, adQueryId))
+        }
     }
 
     get path(): string {
@@ -82,11 +85,34 @@ class QueryEditorViewState extends ViewState {
     }
 }
 
+class AdListViewState extends ViewState {
+    private list: AdList
+
+    constructor(
+        onnavigate: OnNav,
+        session: SessionInfo,
+        private adQueryId?: string,
+    ) {
+        super(onnavigate, session)
+        this.list = new AdList(session, adQueryId)
+    }
+
+    get path(): string {
+        return `view/${this.adQueryId}`
+    }
+
+    get element(): HTMLElement {
+        return this.list.element
+    }
+}
+
 function viewStateFromPath(onnavigate: OnNav, session: SessionInfo, path: string): ViewState {
     if (path == 'add') {
         return new QueryEditorViewState(onnavigate, session)
     } else if (path.startsWith('edit/')) {
         return new QueryEditorViewState(onnavigate, session, path.substring(5))
+    } else if (path.startsWith('view/')) {
+        return new AdListViewState(onnavigate, session, path.substring(5))
     } else {
         return new QueryListViewState(onnavigate, session)
     }

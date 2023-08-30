@@ -67,6 +67,28 @@ class PushQueueItem:
     retries: int
 
 
+@dataclass
+class AdContent:
+    ad_query_id: int
+    id: str
+    account_name: str
+    account_url: str
+    start_date: int
+    last_seen: int
+    text: str
+
+    def to_json(self) -> Dict[str, Any]:
+        return dict(
+            adQueryId=str(self.ad_query_id),
+            id=self.id,
+            accountName=self.account_name,
+            accountUrl=self.account_url,
+            startDate=self.start_date,
+            lastSeen=self.last_seen,
+            text=self.text,
+        )
+
+
 def transaction(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     async def new_fn(db: "DB", *args, **kwargs) -> Any:
         async with db._lock:
@@ -579,6 +601,35 @@ class DB:
             """,
             (text_expiration,),
         )
+
+    @transaction
+    async def list_ad_content(self, ad_query_id: int) -> List[AdContent]:
+        if await self._fetchone(
+            "SELECT COUNT(*) FROM ad_queries WHERE ad_query_id=?", (ad_query_id,)
+        ) == (0,):
+            raise DataArgumentError(f"no ad_query_id found: {ad_query_id}")
+        cursor = await self._conn.execute(
+            """
+            SELECT ad_query_id, id, account_name, account_url, start_date, last_seen, text
+            FROM ad_content
+            WHERE ad_query_id=?
+            """,
+            (ad_query_id,),
+        )
+        results = []
+        async for row in cursor:
+            results.append(
+                AdContent(
+                    ad_query_id=row[0],
+                    id=row[1],
+                    account_name=row[2],
+                    account_url=row[3],
+                    start_date=row[4],
+                    last_seen=row[5],
+                    text=row[6],
+                )
+            )
+        return results
 
     async def _fetchone(self, *args) -> sqlite3.Row:
         results = list(await self._conn.execute_fetchall(*args))

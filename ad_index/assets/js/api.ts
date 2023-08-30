@@ -14,7 +14,7 @@ interface SessionInfo {
 interface AdQueryBase {
     nickname: string
     query: string
-    filters: Array<String>
+    filters: String[]
 }
 
 interface AdQuery extends AdQueryBase {
@@ -23,6 +23,16 @@ interface AdQuery extends AdQueryBase {
 
 interface AdQueryResult extends AdQuery {
     subscribed: boolean
+}
+
+interface AdContent {
+    adQueryId: number
+    id: string
+    accountName: string
+    accountUrl: string
+    startDate: number
+    lastSeen: number
+    text: string
 }
 
 async function createSession(): Promise<SessionInfo> {
@@ -40,7 +50,7 @@ async function updatePushSub(sessionId: string, pushSub: string) {
     return extractSuccess(await (await fetch(uri)).json())
 }
 
-async function getAdQueries(sessionId: string): Promise<Array<AdQueryResult>> {
+async function getAdQueries(sessionId: string): Promise<AdQueryResult[]> {
     const uri = `/api/get_ad_queries?session_id=${encodeURIComponent(sessionId)}`
     return extractSuccess(await (await fetch(uri)).json())
 }
@@ -88,6 +98,11 @@ async function toggleAdQuerySubscription(sessionId: string, adQueryId: string, s
         + `&subscribed=${encodeURIComponent(JSON.stringify(subscribed))}`
     )
     extractSuccess(await (await fetch(uri)).json())
+}
+
+async function listAdContent(adQueryId: string): Promise<AdContent[]> {
+    const uri = `/api/list_ad_content?ad_query_id=${encodeURIComponent(adQueryId)}`
+    return extractSuccess(await (await fetch(uri)).json())
 }
 
 function extractSuccess<T>(obj: any): T {

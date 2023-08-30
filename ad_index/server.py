@@ -85,6 +85,7 @@ class Server:
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
         router.add_get("/api/update_ad_query", self.api_update_ad_query)
         router.add_get("/api/delete_ad_query", self.api_delete_ad_query)
+        router.add_get("/api/list_ad_content", self.api_list_ad_content)
         router.add_get(
             "/api/toggle_ad_query_subscription", self.api_toggle_ad_query_subscription
         )
@@ -186,7 +187,10 @@ class Server:
 
     @api_method
     async def api_delete_ad_query(self, request: Request) -> bool:
-        ad_query_id = request.query.getone("ad_query_id")
+        try:
+            ad_query_id = int(request.query.getone("ad_query_id"))
+        except ValueError:
+            raise APIError("invalid ad_query_id argument")
         return await self.db.delete_ad_query(ad_query_id)
 
     @api_method
@@ -207,6 +211,14 @@ class Server:
         if not status:
             raise APIError("either ad_query_id or session_id was invalid")
 
+    @api_method
+    async def api_list_ad_content(self, request: Request) -> bool:
+        try:
+            ad_query_id = int(request.query.getone("ad_query_id"))
+        except ValueError:
+            raise APIError("invalid ad_query_id argument")
+        return [x.to_json() for x in await self.db.list_ad_content(ad_query_id)]
+
     async def _push_queue_loop(self):
         while True:
             item = await self.db.push_queue_next(
@@ -215,13 +227,14 @@ class Server:
             if item is None:
                 await asyncio.sleep(10.0)
                 continue
-            status = None
+            success = False
             try:
-                status = await self.notifier.notify(item.push_info, item.message)
+                await self.notifier.notify(item.push_info, item.message)
+                success = True
             except:
                 traceback.print_exc()
-            if status == 201 or item.retries >= self.max_message_retries:
-                await self.db.push_queue_finish(item.id, unsub_client=status != 201)
+            if success or item.retries >= self.max_message_retries:
+                await self.db.push_queue_finish(item.id, unsub_client=not success)
 
     async def _query_loop(self):
         await self.db.cleanup_ads(
@@ -287,7 +300,7 @@ def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQuery
             ad_query_id = None
     except KeyError as exc:
         raise APIError(f"argument not found: {exc}")
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, APIError) as exc:
         raise APIError(f"failed to parse argument: {exc}")
     if not isinstance(filters, list) or not all(isinstance(x, str) for x in filters):
         raise APIError("filters must be a JSON-encoded array of strings")

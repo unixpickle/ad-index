@@ -4,6 +4,7 @@ class QueryList {
 
     public onedit: (adQueryId: string) => void
     public onadd: () => void
+    public onview: (adQueryId: string) => void
 
     private loader: Loader
 
@@ -49,7 +50,7 @@ class QueryList {
         return
     }
 
-    private renderResults(results: Array<AdQueryResult>) {
+    private renderResults(results: AdQueryResult[]) {
         if (results.length === 0) {
             const empty = document.createElement('div')
             empty.setAttribute('class', 'query-list-empty-message')
@@ -111,6 +112,7 @@ class QueryList {
                 return button
             })
             buttons[1].addEventListener('click', () => this.onedit(info.adQueryId))
+            buttons[2].addEventListener('click', () => this.onview(info.adQueryId))
             buttons[0].addEventListener('click', async () => {
                 if (!confirm(`Really delete "${info.nickname}"?`)) {
                     return

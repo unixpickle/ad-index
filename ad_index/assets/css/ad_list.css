@@ -1,0 +1,46 @@
+.ad-list-add-button-container {
+    text-align: center;
+    padding-top: 8px;
+}
+
+.ad-list-items {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.ad-list-error-message,
+.ad-list-empty-message {
+    padding: 16px;
+    margin: 8px;
+    text-align: center;
+    background-color: white;
+}
+
+.ad-list-error-message::before {
+    content: 'An error has been encountered.';
+    font-weight: bolder;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.ad-list-item {
+    flex: 1;
+    padding: 16px;
+    margin: 8px;
+    background-color: white;
+    max-width: 192px;
+}
+
+.ad-list-item-name {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.ad-list-item-text {
+    color: #555;
+}
