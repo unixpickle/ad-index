@@ -141,7 +141,9 @@ class DB:
                 vapid_priv    BLOB      NOT NULL,
                 session_id    CHAR(64)  NOT NULL,
                 session_hash  CHAR(64)  NOT NULL,
-                push_sub      TEXT
+                push_sub      TEXT,
+                last_seen     INTEGER   NOT NULL,
+                UNIQUE(session_hash)
             )
             """
         )
@@ -392,8 +394,44 @@ class DB:
     ):
         hash = hash_session_id(session_id)
         await self._conn.execute(
-            "INSERT INTO clients (vapid_pub, vapid_priv, session_id, session_hash) VALUES (?, ?, ?, ?)",
+            """
+            INSERT INTO clients (vapid_pub, vapid_priv, session_id, session_hash, last_seen)
+            VALUES (?, ?, ?, ?, STRFTIME('%s'))
+            """,
             (vapid_pub, vapid_priv, session_id, hash),
+        )
+
+    @transaction
+    async def session_exists(self, session_id: str) -> bool:
+        hash = hash_session_id(session_id)
+        count = await self._fetchone(
+            "SELECT COUNT(*) FROM clients WHERE session_hash=?", (hash,)
+        )
+        return count == (1,)
+
+    @transaction
+    async def cleanup_sessions(self, expiration_time: int):
+        await self._conn.execute(
+            """
+            DELETE FROM clients WHERE last_seen < STRFTIME('%s') - ?
+            """,
+            (expiration_time,),
+        )
+        await self._conn.execute(
+            """
+            DELETE FROM push_queue WHERE NOT EXISTS (
+                SELECT 1 FROM clients WHERE client_id=push_queue.client_id
+            )
+            """,
+            (expiration_time,),
+        )
+        await self._conn.execute(
+            """
+            DELETE FROM client_subs WHERE NOT EXISTS (
+                SELECT 1 FROM clients WHERE client_id=client_subs.client_id
+            )
+            """,
+            (expiration_time,),
         )
 
     @transaction
@@ -401,11 +439,13 @@ class DB:
         self, session_id: str, push_sub: Optional[str]
     ) -> bool:
         hash = hash_session_id(session_id)
-        count = await self._conn.execute(
-            "UPDATE clients SET push_sub=? WHERE session_hash=?",
+        c1 = self._conn.total_changes
+        await self._conn.execute(
+            "UPDATE clients SET push_sub=?, last_seen=STRFTIME('%s') WHERE session_hash=?",
             (push_sub, hash),
         )
-        if count != 0 and not push_sub:
+        count = self._conn.total_changes - c1
+        if count and not push_sub:
             await self._conn.execute(
                 """
                 DELETE FROM push_queue WHERE client_id=(
@@ -455,6 +495,17 @@ class DB:
             await self._conn.execute(
                 """
                 UPDATE clients SET push_sub=NULL WHERE client_id=(
+                    SELECT client_id FROM push_queue WHERE id=?
+                )
+                """,
+                (id,),
+            )
+        else:
+            # If the client successfully received a notification, we don't want
+            # to expire the client session.
+            await self._conn.execute(
+                """
+                UPDATE clients SET last_seen=STRFTIME('%s') WHERE client_id=(
                     SELECT client_id FROM push_queue WHERE id=?
                 )
                 """,
@@ -613,6 +664,7 @@ class DB:
             SELECT ad_query_id, id, account_name, account_url, start_date, last_seen, text
             FROM ad_content
             WHERE ad_query_id=?
+            ORDER BY last_seen DESC, start_date DESC
             """,
             (ad_query_id,),
         )

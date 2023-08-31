@@ -142,9 +142,11 @@ class App {
             // This step is not strictly necessary, but it is possible that we
             // updated our subscription and couldn't contact the server, or that
             // the user manually unsubscribed to notifications.
+            //
+            // This also updates the session so that the server will not expire it.
             return this.syncWebPushSubscription(sub)
         }).catch((e) => {
-            this.showError('Error setting up and syncing service worker: ' + e)
+            this.showError('Error syncing notification state: ' + e)
         })
     }
 
@@ -216,18 +218,21 @@ window.addEventListener('load', async () => {
         registration = await navigator.serviceWorker.register('/js/worker.js')
         const sub = await registration.pushManager.getSubscription()
 
-        if (localStorage.getItem('sessionId')) {
+        if (
+            localStorage.getItem('sessionId') &&
+            await sessionExists(localStorage.getItem('sessionId'))
+        ) {
             session = {
                 sessionId: localStorage.getItem('sessionId'),
                 vapidPub: localStorage.getItem('vapidPub'),
             }
-            // TODO: make sure session is still valid.
-        } else {
+        }
+        if (!session) {
             session = await createSession()
             localStorage.setItem('sessionId', session.sessionId)
             localStorage.setItem('vapidPub', session.vapidPub)
             if (sub) {
-                // We would need to resubscribe with the new VAPID.
+                // We will need to resubscribe with the new VAPID.
                 await sub.unsubscribe()
             }
         }

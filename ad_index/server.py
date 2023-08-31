@@ -11,6 +11,7 @@ from aiohttp.web import Request, UrlDispatcher
 from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
+from requests import session
 
 from .client import Client
 from .db import DB, AdQuery, AdQueryResult, hash_session_id
@@ -63,6 +64,7 @@ class Server:
         refresh_interval: int,
         ad_text_expiration: int,
         max_ad_history: int,
+        session_expiration: int,
     ):
         self.asset_dir = asset_dir
         self.db = db
@@ -73,12 +75,14 @@ class Server:
         self.refresh_interval = refresh_interval
         self.ad_text_expiration = ad_text_expiration
         self.max_ad_history = max_ad_history
+        self.session_expiration = session_expiration
         asyncio.create_task(self._push_queue_loop())
         asyncio.create_task(self._query_loop())
 
     def add_routes(self, router: UrlDispatcher):
         router.add_get("/", self.index)
         router.add_get("/api/create_session", self.api_create_session)
+        router.add_get("/api/session_exists", self.api_session_exists)
         router.add_get("/api/update_push_sub", self.api_update_push_sub)
         router.add_get("/api/get_ad_queries", self.api_get_ad_queries)
         router.add_get("/api/get_ad_query", self.api_get_ad_query)
@@ -104,6 +108,7 @@ class Server:
         vapid_priv = vapid.private_pem()
         session_id = hash_session_id(vapid_pub + vapid_priv)
         try:
+            await self.db.cleanup_sessions(expiration_time=self.session_expiration)
             await self.db.create_session(
                 vapid_pub=vapid_pub, vapid_priv=vapid_priv, session_id=session_id
             )
@@ -113,6 +118,11 @@ class Server:
             sessionId=session_id,
             vapidPub=b64urlencode(vapid_pub),
         )
+
+    @api_method
+    async def api_session_exists(self, request: Request):
+        session_id = request.query.getone("session_id")
+        return await self.db.session_exists(session_id)
 
     @api_method
     async def api_update_push_sub(self, request: Request):
@@ -264,9 +274,9 @@ class Server:
                     ad_query_id=query.ad_query_id, error=str(exc)
                 )
                 continue
-            id_to_result = {x.id: x for x in results}
-            for id in new_ids:
-                result = id_to_result[id]
+            for result in results[::-1]:
+                if result.id not in new_ids:
+                    continue
                 data = io.BytesIO()
                 if id in screenshots:
                     screenshot = screenshots[id]

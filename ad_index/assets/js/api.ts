@@ -39,6 +39,11 @@ async function createSession(): Promise<SessionInfo> {
     return extractSuccess(await (await fetch('/api/create_session')).json())
 }
 
+async function sessionExists(sessionId: string): Promise<boolean> {
+    const uri = `/api/session_exists?session_id=${encodeURIComponent(sessionId)}`
+    return extractSuccess(await (await fetch(uri)).json())
+}
+
 async function updatePushSub(sessionId: string, pushSub: string) {
     if (!pushSub) {
         pushSub = null
