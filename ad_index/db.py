@@ -22,6 +22,8 @@ import aiosqlite
 
 R = TypeVar("R")
 
+MAX_NOTIFY_CHARS = 128  # don't send big push notifications
+
 
 class DataArgumentError(Exception):
     pass
@@ -129,6 +131,7 @@ class DB:
                 next_pull    INTEGER  NOT NULL,
                 last_pull    INTEGER,
                 last_error   TEXT,
+                last_notify  INTEGER,
                 UNIQUE(nickname)
             )
             """
@@ -284,9 +287,14 @@ class DB:
                 (
                     await self._conn.execute(
                         """
-                    UPDATE ad_queries SET nickname=?, query=?, filters=?, next_pull=STRFTIME('%s')
-                    WHERE ad_query_id=?
-                    """,
+                        UPDATE ad_queries SET
+                            nickname=?,
+                            query=?,
+                            filters=?,
+                            next_pull=STRFTIME('%s'),
+                            last_notify=NULL
+                        WHERE ad_query_id=?
+                        """,
                         (q.nickname, q.query, json.dumps(q.filters), q.ad_query_id),
                     )
                 ).rowcount
@@ -423,7 +431,6 @@ class DB:
                 SELECT 1 FROM clients WHERE client_id=push_queue.client_id
             )
             """,
-            (expiration_time,),
         )
         await self._conn.execute(
             """
@@ -431,7 +438,6 @@ class DB:
                 SELECT 1 FROM clients WHERE client_id=client_subs.client_id
             )
             """,
-            (expiration_time,),
         )
 
     @transaction
@@ -538,12 +544,16 @@ class DB:
         text: str,
         screenshot: bytes,
         text_expiration: int,
+        min_notify_interval: int,
     ) -> bool:
-        if await self._fetchone(
-            "SELECT COUNT(*) FROM ad_queries WHERE ad_query_id=?",
+        queries = await self._conn.execute_fetchall(
+            "SELECT nickname FROM ad_queries WHERE ad_query_id=?",
             (ad_query_id,),
-        ) != (1,):
+        )
+        if not len(queries):
             return False
+        nickname = queries[0][0]
+
         text_hash = hash_session_id(text.lower())
         inserted = await self._conn.execute_insert(
             """
@@ -591,14 +601,25 @@ class DB:
             """,
             (ad_query_id, text_hash, text),
         )
-        if not count:
+        (should_notify,) = await self._fetchone(
+            """
+            SELECT last_notify IS NULL OR last_notify < STRFTIME('%s') - ?
+            FROM ad_queries
+            WHERE ad_query_id=?
+            """,
+            (min_notify_interval, ad_query_id),
+        )
+        if not count and should_notify:
             notify_message = json.dumps(
                 dict(
-                    ad_query_id=ad_query_id,
-                    id=id,
-                    account_name=account_name,
-                    account_url=account_url,
-                    text=text,
+                    adQueryId=ad_query_id,
+                    nickname=nickname,
+                    ad=dict(
+                        id=id,
+                        accountName=account_name,
+                        accountUrl=account_url,
+                        text=text[:MAX_NOTIFY_CHARS],
+                    ),
                 )
             )
             await self._conn.execute(
@@ -609,6 +630,12 @@ class DB:
                 WHERE ad_query_id=?
                 """,
                 (notify_message, ad_query_id),
+            )
+            await self._conn.execute(
+                """
+                UPDATE ad_queries SET last_notify=STRFTIME('%s') WHERE ad_query_id=?
+                """,
+                (ad_query_id,),
             )
         return True
 

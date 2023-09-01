@@ -11,7 +11,6 @@ from aiohttp.web import Request, UrlDispatcher
 from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
-from requests import session
 
 from .client import Client
 from .db import DB, AdQuery, AdQueryResult, hash_session_id
@@ -63,6 +62,7 @@ class Server:
         message_retry_interval: int,
         refresh_interval: int,
         ad_text_expiration: int,
+        min_notify_interval: int,
         max_ad_history: int,
         session_expiration: int,
     ):
@@ -74,6 +74,7 @@ class Server:
         self.message_retry_interval = message_retry_interval
         self.refresh_interval = refresh_interval
         self.ad_text_expiration = ad_text_expiration
+        self.min_notify_interval = min_notify_interval
         self.max_ad_history = max_ad_history
         self.session_expiration = session_expiration
         asyncio.create_task(self._push_queue_loop())
@@ -270,7 +271,7 @@ class Server:
                 screenshots = await self.client.screenshot_ids(list(new_ids))
             except Exception as exc:
                 traceback.print_exc()
-                self.db.ad_query_finished_pull(
+                await self.db.ad_query_finished_pull(
                     ad_query_id=query.ad_query_id, error=str(exc)
                 )
                 continue
@@ -290,6 +291,7 @@ class Server:
                     text=result.text,
                     screenshot=data.getvalue(),
                     text_expiration=self.ad_text_expiration,
+                    min_notify_interval=self.min_notify_interval,
                 )
             await self.db.ad_query_finished_pull(ad_query_id=query.ad_query_id)
             await self.db.cleanup_ads(

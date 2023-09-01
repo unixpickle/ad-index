@@ -21,6 +21,7 @@ async def main():
     parser.add_argument("--message-retry-interval", type=int, default=60 * 30)
     parser.add_argument("--refresh-interval", type=int, default=60 * 30)
     parser.add_argument("--ad-text-expiration", type=int, default=60 * 60 * 24 * 5)
+    parser.add_argument("--min-notify-interval", type=int, default=60 * 5)
     parser.add_argument("--max-ad-history", type=int, default=50)
     parser.add_argument("--session-expiration", type=int, default=60 * 60 * 24 * 120)
     parser.add_argument("--host", type=str, default="0.0.0.0")
@@ -38,6 +39,7 @@ async def main():
                 message_retry_interval=args.message_retry_interval,
                 refresh_interval=args.refresh_interval,
                 ad_text_expiration=args.ad_text_expiration,
+                min_notify_interval=args.min_notify_interval,
                 max_ad_history=args.max_ad_history,
                 session_expiration=args.session_expiration,
             )

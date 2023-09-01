@@ -10,7 +10,10 @@ from typing import Dict, List, Optional, Sequence
 
 from PIL import Image
 from selenium import webdriver
-from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    NoSuchElementException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -151,7 +154,10 @@ class Client:
             ad_body = self.driver.execute_script(
                 "return arguments[0].nextElementSibling;", sep
             )
-            account_link = ad_body.find_element(by=By.TAG_NAME, value="a")
+            try:
+                account_link = ad_body.find_element(by=By.TAG_NAME, value="a")
+            except NoSuchElementException:
+                continue
             results.append(
                 SearchResult(
                     id=id_field.text.split(" ")[-1],
