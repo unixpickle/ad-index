@@ -1,9 +1,9 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import sqlite3
-import traceback
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from aiohttp import web
@@ -15,6 +15,8 @@ from py_vapid.utils import b64urlencode
 from .client import Client
 from .db import DB, AdQuery, AdQueryResult, hash_session_id
 from .notifier import Notifier
+
+logger = logging.getLogger(__name__)
 
 
 class APIError(Exception):
@@ -28,8 +30,13 @@ def api_method(
         try:
             data = await fn(*args)
         except Exception as exc:
-            traceback.print_exc()
+            logger.exception("error in API handler")
             return web.json_response(data=dict(error=str(exc)))
+        logger.info(
+            "API %s successfully returned object of type %s",
+            fn.__name__,
+            type(data).__name__,
+        )
         return web.json_response(data=dict(data=data))
 
     return _fn
@@ -113,6 +120,7 @@ class Server:
             await self.db.create_session(
                 vapid_pub=vapid_pub, vapid_priv=vapid_priv, session_id=session_id
             )
+            logger.info("created session with id %s", session_id)
         except Exception as exc:
             raise APIError("Unable to create session in database") from exc
         return dict(
@@ -149,6 +157,7 @@ class Server:
             session_id=session_id, push_sub=push_sub
         )
         if not found:
+            logger.warn("session_id not found for update_push_sub: %s", session_id)
             raise APIError("session_id not found")
 
     @api_method
@@ -240,10 +249,19 @@ class Server:
                 continue
             success = False
             try:
+                logger.info(
+                    "sending push queue item %d => client %d", item.id, item.client_id
+                )
                 await self.notifier.notify(item.push_info, item.message)
                 success = True
             except:
-                traceback.print_exc()
+                logger.exception("failed to deliver push queue item")
+            else:
+                logger.info(
+                    "successfully sent push queue item %d => client %d",
+                    item.id,
+                    item.client_id,
+                )
             if success or item.retries >= self.max_message_retries:
                 await self.db.push_queue_finish(item.id, unsub_client=not success)
 
@@ -258,6 +276,12 @@ class Server:
             if query is None:
                 await asyncio.sleep(10.0)
                 continue
+            logger.info(
+                "running query %d (query=%s, filters=%s)",
+                query.ad_query_id,
+                query.query,
+                ",".join(query.filters),
+            )
             try:
                 results = [
                     result
@@ -268,9 +292,10 @@ class Server:
                 new_ids = await self.db.unseen_ad_ids(
                     query.ad_query_id, [x.id for x in results]
                 )
+                logger.info("query returned %d new ids", len(new_ids))
                 screenshots = await self.client.screenshot_ids(list(new_ids))
             except Exception as exc:
-                traceback.print_exc()
+                logger.exception("error fetching results")
                 await self.db.ad_query_finished_pull(
                     ad_query_id=query.ad_query_id, error=str(exc)
                 )
@@ -279,10 +304,10 @@ class Server:
                 if result.id not in new_ids:
                     continue
                 data = io.BytesIO()
-                if id in screenshots:
-                    screenshot = screenshots[id]
+                if result.id in screenshots:
+                    screenshot = screenshots[result.id]
                     screenshot.convert("RGB").save(data, format="JPEG", quality=85)
-                await self.db.insert_ad(
+                inserted = await self.db.insert_ad(
                     ad_query_id=query.ad_query_id,
                     id=result.id,
                     account_name=result.account_name,
@@ -293,6 +318,13 @@ class Server:
                     text_expiration=self.ad_text_expiration,
                     min_notify_interval=self.min_notify_interval,
                 )
+                if inserted:
+                    logger.debug(
+                        "inserted ad with id %s into ad query %d",
+                        result.id,
+                        query.ad_query_id,
+                    )
+            logger.info("finished pull for ad query %d", query.ad_query_id)
             await self.db.ad_query_finished_pull(ad_query_id=query.ad_query_id)
             await self.db.cleanup_ads(
                 max_ads=self.max_ad_history, text_expiration=self.ad_text_expiration

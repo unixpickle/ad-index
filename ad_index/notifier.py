@@ -1,8 +1,6 @@
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from typing import Any
 
 import requests
 from py_vapid import Vapid

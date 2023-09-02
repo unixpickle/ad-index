@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 import os
 
 from aiohttp import web
@@ -27,6 +28,8 @@ async def main():
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO)
 
     async with DB.connect(args.db) as db:
         async with Client.create() as client:

@@ -64,6 +64,7 @@ class ClientPushInfo:
 @dataclass
 class PushQueueItem:
     id: int
+    client_id: int
     push_info: ClientPushInfo
     message: str
     retries: int
@@ -162,7 +163,7 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS push_queue (
-                id          INTEGER  PRIMARY KEY,
+                id          INTEGER  PRIMARY KEY  AUTOINCREMENT,
                 client_id   INTEGER  NOT NULL,
                 message     TEXT     NOT NULL,
                 retry_time  INTEGER  NOT NULL,
@@ -468,6 +469,7 @@ class DB:
             """
             SELECT
                 push_queue.id,
+                push_queue.client_id,
                 push_queue.message,
                 push_queue.retries,
                 clients.push_sub,
@@ -483,13 +485,14 @@ class DB:
             break
         if row is None:
             return None
-        id, message, retries, push_sub, vapid_priv = row
+        id, client_id, message, retries, push_sub, vapid_priv = row
         await self._conn.execute(
             "UPDATE push_queue SET retry_time=STRFTIME('%s')+?, retries=? WHERE id=?",
             (retry_timeout, retries + 1, id),
         )
         return PushQueueItem(
             id=id,
+            client_id=client_id,
             push_info=ClientPushInfo(push_sub=push_sub, vapid_priv=vapid_priv),
             message=message,
             retries=retries,
