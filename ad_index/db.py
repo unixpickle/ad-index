@@ -117,6 +117,7 @@ class DB:
     async def connect(cls, path: str) -> "DB":
         async with aiosqlite.connect(path) as conn:
             db = cls(conn)
+            await db._conn.execute("PRAGMA foreign_keys = ON")
             await db._create_tables()
             yield db
 
@@ -154,8 +155,8 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS client_subs (
-                ad_query_id  INTEGER  NOT NULL,
-                client_id    INTEGER  NOT NULL,
+                ad_query_id  INTEGER  NOT NULL  REFERENCES ad_queries(ad_query_id) ON DELETE CASCADE,
+                client_id    INTEGER  NOT NULL  REFERENCES clients(client_id) ON DELETE CASCADE,
                 UNIQUE(ad_query_id, client_id)
             );
             """
@@ -164,7 +165,7 @@ class DB:
             """
             CREATE TABLE IF NOT EXISTS push_queue (
                 id          INTEGER  PRIMARY KEY  AUTOINCREMENT,
-                client_id   INTEGER  NOT NULL,
+                client_id   INTEGER  NOT NULL  REFERENCES clients(client_id) ON DELETE CASCADE,
                 message     TEXT     NOT NULL,
                 retry_time  INTEGER  NOT NULL,
                 retries     INTEGER  NOT NULL
@@ -174,7 +175,7 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ad_content (
-                ad_query_id   INTEGER   NOT NULL,
+                ad_query_id   INTEGER   NOT NULL  REFERENCES ad_queries(ad_query_id) ON DELETE CASCADE,
                 id            TEXT      NOT NULL,
                 account_name  TEXT      NOT NULL,
                 account_url   TEXT      NOT NULL,
@@ -190,7 +191,7 @@ class DB:
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ad_content_text (
-                ad_query_id  INTEGER   NOT NULL,
+                ad_query_id  INTEGER   NOT NULL  REFERENCES ad_queries(ad_query_id) ON DELETE CASCADE,
                 text_hash    CHAR(64)  NOT NULL,
                 text         TEXT      NOT NULL,
                 last_seen    INTEGER   NOT NULL,
@@ -390,11 +391,6 @@ class DB:
                 "DELETE FROM ad_queries WHERE ad_query_id=?", (id,)
             )
         ).rowcount != 0
-        await self._conn.execute("DELETE FROM client_subs WHERE ad_query_id=?", (id,))
-        await self._conn.execute("DELETE FROM ad_content WHERE ad_query_id=?", (id,))
-        await self._conn.execute(
-            "DELETE FROM ad_content_text WHERE ad_query_id=?", (id,)
-        )
         return deleted
 
     @transaction
@@ -426,25 +422,14 @@ class DB:
             """,
             (expiration_time,),
         )
-        await self._conn.execute(
-            """
-            DELETE FROM push_queue WHERE NOT EXISTS (
-                SELECT 1 FROM clients WHERE client_id=push_queue.client_id
-            )
-            """,
-        )
-        await self._conn.execute(
-            """
-            DELETE FROM client_subs WHERE NOT EXISTS (
-                SELECT 1 FROM clients WHERE client_id=client_subs.client_id
-            )
-            """,
-        )
 
     @transaction
     async def update_client_push_sub(
         self, session_id: str, push_sub: Optional[str]
     ) -> bool:
+        if json.loads(push_sub) is None:
+            # Store NULL as sql type and not JSON string.
+            push_sub = None
         hash = hash_session_id(session_id)
         c1 = self._conn.total_changes
         await self._conn.execute(
@@ -459,7 +444,7 @@ class DB:
                     SELECT client_id FROM clients WHERE session_hash=?
                 )
                 """,
-                hash,
+                (hash,),
             )
         return count != 0
 
@@ -630,7 +615,10 @@ class DB:
                 INSERT INTO push_queue (client_id, message, retry_time, retries)
                 SELECT client_id, ?, STRFTIME('%s'), 0
                 FROM client_subs
-                WHERE ad_query_id=?
+                WHERE ad_query_id=? AND EXISTS (
+                    SELECT 1 FROM clients
+                    WHERE clients.client_id=client_subs.client_id AND clients.push_sub IS NOT NULL
+                )
                 """,
                 (notify_message, ad_query_id),
             )
