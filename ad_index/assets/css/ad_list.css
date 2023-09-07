@@ -33,7 +33,7 @@
     padding: 16px;
     margin: 8px;
     background-color: white;
-    max-width: 192px;
+    max-width: 300px;
 }
 
 .ad-list-item-name {
@@ -43,4 +43,31 @@
 
 .ad-list-item-text {
     color: #555;
+}
+
+.ad-list-status {
+    display: table;
+    width: 300px;
+    margin: 8px auto 0 auto;
+    background-color: white;
+    padding: 16px;
+}
+
+.ad-list-status-item {
+    display: table-row;
+}
+
+.ad-list-status-item-name,
+.ad-list-status-item-contents {
+    display: table-cell;
+}
+
+.ad-list-status-item-name {
+    text-align: right;
+    padding: 2px 8px 2px 0;
+    font-weight: bold;
+}
+
+.ad-list-status-item-contents-empty {
+    color: #777;
 }

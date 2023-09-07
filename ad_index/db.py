@@ -92,6 +92,26 @@ class AdContent:
         )
 
 
+@dataclass
+class AdQueryStatus(AdQueryResult):
+    next_pull: int
+    last_pull: Optional[int]
+    last_error: Optional[str]
+    last_notify: Optional[int]
+
+    def to_json(self) -> Dict[str, Any]:
+        res = super().to_json()
+        res.update(
+            dict(
+                nextPull=self.next_pull,
+                lastPull=self.last_pull,
+                lastError=self.last_error,
+                lastNotify=self.last_notify,
+            )
+        )
+        return res
+
+
 def transaction(fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     async def new_fn(db: "DB", *args, **kwargs) -> Any:
         async with db._lock:
@@ -345,6 +365,59 @@ class DB:
             UPDATE ad_queries SET last_pull=STRFTIME('%s'), last_error=? WHERE ad_query_id=?
             """,
             (error, ad_query_id),
+        )
+
+    @transaction
+    async def ad_query_status(
+        self, session_id: str, ad_query_id: int
+    ) -> Optional[AdQueryStatus]:
+        hash = hash_session_id(session_id)
+        rows = await self._conn.execute_fetchall(
+            """
+            SELECT
+                nickname,
+                query,
+                filters,
+                next_pull,
+                last_pull,
+                last_error,
+                last_notify,
+                (
+                    SELECT COUNT(*) FROM client_subs
+                    WHERE (
+                        client_subs.ad_query_id = ad_queries.ad_query_id AND
+                        client_subs.client_id = (
+                            SELECT clients.client_id FROM clients WHERE session_hash=?
+                        )
+                    )
+                )
+            FROM ad_queries
+            WHERE ad_query_id=?
+            """,
+            (hash, ad_query_id),
+        )
+        if not len(rows):
+            return None
+        (
+            nickname,
+            query,
+            filters,
+            next_pull,
+            last_pull,
+            last_error,
+            last_notify,
+            subscribed,
+        ) = rows[0]
+        return AdQueryStatus(
+            nickname=nickname,
+            query=query,
+            filters=filters,
+            ad_query_id=ad_query_id,
+            subscribed=bool(subscribed),
+            next_pull=next_pull,
+            last_pull=last_pull,
+            last_error=last_error,
+            last_notify=last_notify,
         )
 
     @transaction

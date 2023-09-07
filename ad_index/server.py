@@ -94,6 +94,7 @@ class Server:
         router.add_get("/api/update_push_sub", self.api_update_push_sub)
         router.add_get("/api/get_ad_queries", self.api_get_ad_queries)
         router.add_get("/api/get_ad_query", self.api_get_ad_query)
+        router.add_get("/api/get_ad_query_status", self.api_get_ad_query_status)
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
         router.add_get("/api/update_ad_query", self.api_update_ad_query)
         router.add_get("/api/delete_ad_query", self.api_delete_ad_query)
@@ -180,6 +181,20 @@ class Server:
         for item in await self.db.ad_queries(session_id, ad_query_id=ad_query_id):
             return item.to_json()
         raise APIError("could not find the specified ad_query")
+
+    @api_method
+    async def api_get_ad_query_status(self, request: Request) -> Dict[str, Any]:
+        try:
+            session_id = request.query.getone("session_id")
+            ad_query_id = int(request.query.getone("ad_query_id"))
+        except KeyError as exc:
+            raise APIError(f"argument not found: {exc}")
+        except json.JSONDecodeError as exc:
+            raise APIError(f"failed to parse argument: {exc}")
+        item = await self.db.ad_query_status(session_id, ad_query_id)
+        if item is None:
+            raise APIError("could not find the specified ad_query")
+        return item.to_json()
 
     @api_method
     @rewrite_db_errors

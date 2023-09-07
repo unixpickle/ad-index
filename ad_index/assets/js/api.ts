@@ -25,6 +25,15 @@ interface AdQueryResult extends AdQuery {
     subscribed: boolean
 }
 
+interface AdQueryStatus extends AdQueryResult {
+    nextPull: number
+
+    // These may be null
+    lastPull: number
+    lastError: number
+    lastNotify: number
+}
+
 interface AdContent {
     adQueryId: number
     id: string
@@ -63,6 +72,14 @@ async function getAdQueries(sessionId: string): Promise<AdQueryResult[]> {
 async function getAdQuery(sessionId: string, adQueryId: string): Promise<AdQueryResult> {
     const uri = (
         `/api/get_ad_query?session_id=${encodeURIComponent(sessionId)}` +
+        `&ad_query_id=${encodeURIComponent(adQueryId)}`
+    )
+    return extractSuccess(await (await fetch(uri)).json())
+}
+
+async function getAdQueryStatus(sessionId: string, adQueryId: string): Promise<AdQueryStatus> {
+    const uri = (
+        `/api/get_ad_query_status?session_id=${encodeURIComponent(sessionId)}` +
         `&ad_query_id=${encodeURIComponent(adQueryId)}`
     )
     return extractSuccess(await (await fetch(uri)).json())
