@@ -11,10 +11,15 @@ interface SessionInfo {
     vapidPub: string
 }
 
+interface AdQueryFilters {
+    matchTerms: string[]
+    accountFilter: string
+}
+
 interface AdQueryBase {
     nickname: string
     query: string
-    filters: String[]
+    filters: AdQueryFilters
 }
 
 interface AdQuery extends AdQueryBase {

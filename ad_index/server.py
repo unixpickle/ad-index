@@ -13,7 +13,14 @@ from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import DB, AdQuery, AdQueryResult, hash_session_id
+from .db import (
+    DB,
+    AdQuery,
+    AdQueryFilters,
+    AdQueryResult,
+    FilterDecodeError,
+    hash_session_id,
+)
 from .notifier import Notifier
 
 logger = logging.getLogger(__name__)
@@ -295,14 +302,15 @@ class Server:
                 "running query %d (query=%s, filters=%s)",
                 query.ad_query_id,
                 query.query,
-                ",".join(query.filters),
+                query.filters,
             )
             try:
                 results = [
                     result
                     for result in await self.client.query(query.query)
-                    if not len(query.filters)
-                    or any(x.tolower() in result.text.lower() for x in query.filters)
+                    if query.filters.should_keep(
+                        content=result.text, account_name=result.account_name
+                    )
                 ]
                 new_ids = await self.db.unseen_ad_ids(
                     query.ad_query_id, [x.id for x in results]
@@ -351,7 +359,7 @@ def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQuery
         session_id = request.query.getone("session_id")
         nickname = request.query.getone("nickname")
         query = request.query.getone("query")
-        filters = json.loads(request.query.getone("filters"))
+        filters = AdQueryFilters.from_json(json.loads(request.query.getone("filters")))
         subscribed = json.loads(request.query.getone("subscribed"))
         if update:
             ad_query_id = int(request.query.getone("ad_query_id"))
@@ -359,10 +367,8 @@ def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQuery
             ad_query_id = None
     except KeyError as exc:
         raise APIError(f"argument not found: {exc}")
-    except (json.JSONDecodeError, APIError) as exc:
+    except (json.JSONDecodeError, APIError, FilterDecodeError) as exc:
         raise APIError(f"failed to parse argument: {exc}")
-    if not isinstance(filters, list) or not all(isinstance(x, str) for x in filters):
-        raise APIError("filters must be a JSON-encoded array of strings")
     if not isinstance(subscribed, bool):
         raise APIError("subscribed must be true or false")
     return (

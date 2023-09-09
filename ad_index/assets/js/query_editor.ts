@@ -6,19 +6,20 @@ class QueryEditor {
     private loader: Loader
     private nickname: QueryEditorField
     private query: QueryEditorField
-    private filters: QueryEditorField
+    private matchTerms: QueryEditorField
+    private accountFilter: QueryEditorField
     private subscribed: QueryEditorField
     private actions: HTMLDivElement
-    private info: AdQueryResult
 
     constructor(private session: SessionInfo, private adQueryId?: string) {
         this.element = document.createElement('div')
         this.element.setAttribute('class', 'query-editor')
 
         this.loader = new Loader()
-        this.nickname = new QueryEditorField('Name', '')
-        this.query = new QueryEditorField('Query', '')
-        this.filters = new QueryEditorField('Filters', '')
+        this.nickname = new QueryEditorField('Name', '', true, 'Example: "Nike Deals"')
+        this.query = new QueryEditorField('Query', '', true, "Example: nike")
+        this.matchTerms = new QueryEditorField('Match terms', '', false, "Example: discount,% off")
+        this.accountFilter = new QueryEditorField('Account name', '', false, "Example: Nike")
         this.subscribed = new QueryEditorCheckField('Notifications', '')
 
         this.actions = document.createElement('div')
@@ -71,10 +72,10 @@ class QueryEditor {
     }
 
     private showInfo(info: AdQueryResult) {
-        this.info = info
         this.nickname.setValue(info.nickname)
         this.query.setValue(info.query)
-        this.filters.setValue(info.filters.join(','))
+        this.matchTerms.setValue((info.filters.matchTerms || []).join(','))
+        this.accountFilter.setValue(info.filters.accountFilter || '')
         this.subscribed.input.checked = info.subscribed
         this.presentFields();
     }
@@ -83,7 +84,8 @@ class QueryEditor {
         this.element.replaceChildren(
             this.nickname.element,
             this.query.element,
-            this.filters.element,
+            this.matchTerms.element,
+            this.accountFilter.element,
             this.subscribed.element,
             this.actions,
         )
@@ -100,13 +102,20 @@ class QueryEditor {
         if (hasEmpty) {
             return
         }
-        const filters = this.filters.input.value
+        const filters: AdQueryFilters = {
+            matchTerms: (
+                this.matchTerms.input.value ?
+                    this.matchTerms.input.value.split(',') :
+                    null
+            ),
+            accountFilter: this.accountFilter.input.value || null,
+        }
         try {
             if (this.adQueryId) {
                 await updateAdQuery(this.session.sessionId, {
                     nickname: this.nickname.input.value,
                     query: this.query.input.value,
-                    filters: filters ? filters.split(',') : [],
+                    filters: filters,
                     adQueryId: this.adQueryId,
                     subscribed: this.subscribed.input.checked,
                 })
@@ -114,7 +123,7 @@ class QueryEditor {
                 await insertAdQuery(this.session.sessionId, {
                     nickname: this.nickname.input.value,
                     query: this.query.input.value,
-                    filters: filters ? filters.split(',') : [],
+                    filters: filters,
                 }, this.subscribed.input.checked)
             }
         } catch (e) {
@@ -131,18 +140,18 @@ class QueryEditorField {
     public input: HTMLInputElement
     private validatorField: HTMLElement
 
-    constructor(private name: string, private value: string) {
+    constructor(private name: string, private value: string, required: boolean, hint: string) {
         this.element = document.createElement('div')
         this.element.setAttribute('class', 'query-editor-field')
 
         this.input = document.createElement('input')
         this.input.id = `query-editor-input-${name.replace(' ', '-').toLowerCase()}`
-        this.input.setAttribute('placeholder', name)
+        this.input.setAttribute('placeholder', hint)
         this.input.setAttribute('class', 'query-editor-field-input')
         const label = document.createElement('label')
         label.setAttribute('for', this.input.id)
         label.setAttribute('class', 'query-editor-field-label')
-        label.textContent = name
+        label.textContent = required ? `* ${name}` : name
 
         this.validatorField = document.createElement('div')
         this.validatorField.setAttribute('class', 'query-editor-field-validator')
@@ -175,7 +184,7 @@ class QueryEditorField {
 
 class QueryEditorCheckField extends QueryEditorField {
     constructor(name: string, value: string) {
-        super(name, value)
+        super(name, value, false, null)
         this.input.setAttribute('type', 'checkbox')
         this.element.classList.add('query-editor-field-checkbox')
     }

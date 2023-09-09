@@ -29,11 +29,56 @@ class DataArgumentError(Exception):
     pass
 
 
+class FilterDecodeError(Exception):
+    pass
+
+
+@dataclass
+class AdQueryFilters:
+    match_terms: Optional[List[str]] = None
+    account_filter: Optional[str] = None
+
+    def should_keep(self, content: str, account_name: str) -> bool:
+        if self.match_terms:
+            content = content.lower()
+            if not any(x.tolower() in content for x in self.match_terms):
+                return False
+        if self.account_filter:
+            if self.account_filter.lower() not in account_name.lower():
+                return False
+        return True
+
+    def to_json(self) -> Dict[str, Any]:
+        return dict(matchTerms=self.match_terms, accountFilter=self.account_filter)
+
+    @classmethod
+    def from_json(cls, doc: Any) -> "AdQueryFilters":
+        if not isinstance(doc, dict):
+            raise FilterDecodeError("invalid type of filter object")
+        if "matchTerms" in doc:
+            mt = doc["matchTerms"]
+            if mt is not None:
+                if not (
+                    isinstance(mt, list)
+                    and len(mt)
+                    and all(isinstance(x, str) for x in mt)
+                ):
+                    raise FilterDecodeError("invalid type for match terms")
+        if "accountFilter" in doc:
+            af = doc["accountFilter"]
+            if not (af is None or isinstance(af, str)):
+                raise FilterDecodeError("invalid type for account filter")
+        return cls(
+            match_terms=doc.get("matchTerms"),
+            account_filter=doc.get("accountFilter"),
+        )
+
+
 @dataclass
 class AdQueryBase:
     nickname: str
     query: str
-    filters: List[str]
+    filters: AdQueryFilters
 
 
 @dataclass
@@ -50,7 +95,7 @@ class AdQueryResult(AdQuery):
             adQueryId=str(self.ad_query_id),
             nickname=self.nickname,
             query=self.query,
-            filters=self.filters,
+            filters=self.filters.to_json(),
             subscribed=self.subscribed,
         )
 
@@ -260,7 +305,7 @@ class DB:
                 AdQueryResult(
                     nickname=row[1],
                     query=row[2],
-                    filters=json.loads(row[3]),
+                    filters=AdQueryFilters.from_json(json.loads(row[3])),
                     ad_query_id=str(row[0]),
                     subscribed=row[4] is not None,
                 )
@@ -290,7 +335,7 @@ class DB:
                 next_pull
             ) VALUES (?, ?, ?, STRFTIME('%s'))
             """,
-            (q.nickname, q.query, json.dumps(q.filters)),
+            (q.nickname, q.query, json.dumps(q.filters.to_json())),
         )
         (id,) = result
         if sub_session_id:
@@ -317,7 +362,12 @@ class DB:
                             last_notify=NULL
                         WHERE ad_query_id=?
                         """,
-                        (q.nickname, q.query, json.dumps(q.filters), q.ad_query_id),
+                        (
+                            q.nickname,
+                            q.query,
+                            json.dumps(q.filters.to_json()),
+                            q.ad_query_id,
+                        ),
                     )
                 ).rowcount
                 != 0
@@ -353,7 +403,10 @@ class DB:
             (refresh_interval, id),
         )
         return AdQuery(
-            nickname=nickname, query=query, filters=json.loads(filters), ad_query_id=id
+            nickname=nickname,
+            query=query,
+            filters=AdQueryFilters.from_json(json.loads(filters)),
+            ad_query_id=id,
         )
 
     @transaction
@@ -411,7 +464,7 @@ class DB:
         return AdQueryStatus(
             nickname=nickname,
             query=query,
-            filters=filters,
+            filters=AdQueryFilters.from_json(json.loads(filters)),
             ad_query_id=ad_query_id,
             subscribed=bool(subscribed),
             next_pull=next_pull,
