@@ -38,7 +38,14 @@
 
 .ad-list-item-name {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
+}
+
+.ad-list-item-screenshot {
+    display: block;
+    max-width: 290px;
+    margin: auto;
+    margin-bottom: 16px;
 }
 
 .ad-list-item-text {

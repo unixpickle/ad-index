@@ -106,6 +106,7 @@ class Server:
         router.add_get("/api/update_ad_query", self.api_update_ad_query)
         router.add_get("/api/delete_ad_query", self.api_delete_ad_query)
         router.add_get("/api/list_ad_content", self.api_list_ad_content)
+        router.add_get("/screenshot", self.ad_content_screenshot)
         router.add_get(
             "/api/toggle_ad_query_subscription", self.api_toggle_ad_query_subscription
         )
@@ -260,6 +261,17 @@ class Server:
         except ValueError:
             raise APIError("invalid ad_query_id argument")
         return [x.to_json() for x in await self.db.list_ad_content(ad_query_id)]
+
+    async def ad_content_screenshot(self, request: Request) -> bool:
+        try:
+            ad_query_id = int(request.query.getone("ad_query_id"))
+            ad_id = request.query.getone("id")
+        except ValueError:
+            return web.Response(body="400 Bad Request", status=400)
+        screenshot = await self.db.ad_content_screenshot(ad_query_id, ad_id)
+        if screenshot is None:
+            return web.Response(body="404 Not Found", status=404)
+        return web.Response(body=screenshot, status=200, content_type="image/jpeg")
 
     async def _push_queue_loop(self):
         while True:

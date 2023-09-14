@@ -827,6 +827,17 @@ class DB:
             )
         return results
 
+    async def ad_content_screenshot(
+        self, ad_query_id: int, ad_id: str
+    ) -> Optional[bytes]:
+        rows = await self._conn.execute_fetchall(
+            "SELECT screenshot FROM ad_content WHERE ad_query_id=? AND id=?",
+            (ad_query_id, ad_id),
+        )
+        if len(rows) == 0:
+            return None
+        return rows[0][0]
+
     async def _fetchone(self, *args) -> sqlite3.Row:
         results = list(await self._conn.execute_fetchall(*args))
         if len(results) != 1:

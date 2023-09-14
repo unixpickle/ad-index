@@ -84,6 +84,23 @@ class AdList {
             advertiser.setAttribute('class', 'ad-list-item-name')
             element.appendChild(advertiser)
 
+            const link = document.createElement('a')
+            link.setAttribute('class', 'ad-list-item-view-link')
+            link.setAttribute('href', `https://www.facebook.com/ads/library/?id=${item.id}`)
+            link.setAttribute('target', '_blank')
+
+            const screenshot = document.createElement('img')
+            screenshot.setAttribute('class', 'ad-list-item-screenshot')
+            screenshot.setAttribute(
+                'src',
+                (
+                    `/screenshot?ad_query_id=${encodeURIComponent(this.adQueryId)}` +
+                    `&id=${encodeURIComponent(item.id)}`
+                )
+            )
+            link.appendChild(screenshot)
+            element.appendChild(link)
+
             const text = document.createElement('div')
             text.setAttribute('class', 'ad-list-item-text')
             text.textContent = item.text
