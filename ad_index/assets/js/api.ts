@@ -13,6 +13,7 @@ interface SessionInfo {
 
 interface AdQueryFilters {
     matchTerms: string[]
+    rejectTerms: string[]
     accountFilter: string
 }
 

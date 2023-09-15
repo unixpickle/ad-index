@@ -7,6 +7,7 @@ class QueryEditor {
     private nickname: QueryEditorField
     private query: QueryEditorField
     private matchTerms: QueryEditorField
+    private rejectTerms: QueryEditorField
     private accountFilter: QueryEditorField
     private subscribed: QueryEditorField
     private actions: HTMLDivElement
@@ -19,6 +20,7 @@ class QueryEditor {
         this.nickname = new QueryEditorField('Name', '', true, 'Example: "Nike Deals"')
         this.query = new QueryEditorField('Query', '', true, "Example: nike")
         this.matchTerms = new QueryEditorField('Match terms', '', false, "Example: discount,% off")
+        this.rejectTerms = new QueryEditorField('Reject terms', '', false, "Example: signup,select items")
         this.accountFilter = new QueryEditorField('Account name', '', false, "Example: Nike")
         this.subscribed = new QueryEditorCheckField('Notifications', '')
 
@@ -75,6 +77,7 @@ class QueryEditor {
         this.nickname.setValue(info.nickname)
         this.query.setValue(info.query)
         this.matchTerms.setValue((info.filters.matchTerms || []).join(','))
+        this.rejectTerms.setValue((info.filters.rejectTerms || []).join(','))
         this.accountFilter.setValue(info.filters.accountFilter || '')
         this.subscribed.input.checked = info.subscribed
         this.presentFields();
@@ -85,6 +88,7 @@ class QueryEditor {
             this.nickname.element,
             this.query.element,
             this.matchTerms.element,
+            this.rejectTerms.element,
             this.accountFilter.element,
             this.subscribed.element,
             this.actions,
@@ -103,11 +107,8 @@ class QueryEditor {
             return
         }
         const filters: AdQueryFilters = {
-            matchTerms: (
-                this.matchTerms.input.value ?
-                    this.matchTerms.input.value.split(',') :
-                    null
-            ),
+            matchTerms: this.matchTerms.getValueList(),
+            rejectTerms: this.rejectTerms.getValueList(),
             accountFilter: this.accountFilter.input.value || null,
         }
         try {
@@ -127,7 +128,6 @@ class QueryEditor {
                 }, this.subscribed.input.checked)
             }
         } catch (e) {
-            // TODO: more granular error handling here
             this.nickname.invalidWithReason(e.toString())
             return
         }
@@ -166,6 +166,14 @@ class QueryEditorField {
     public setValue(value: string) {
         this.input.value = value
         this.setValid(true)
+    }
+
+    public getValueList(): string[] {
+        if (this.input.value) {
+            return this.input.value.split(',')
+        } else {
+            return null
+        }
     }
 
     public invalidWithReason(reason: string) {

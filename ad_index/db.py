@@ -36,12 +36,16 @@ class FilterDecodeError(Exception):
 @dataclass
 class AdQueryFilters:
     match_terms: Optional[List[str]] = None
+    reject_terms: Optional[List[str]] = None
     account_filter: Optional[str] = None
 
     def should_keep(self, content: str, account_name: str) -> bool:
+        content = content.lower()
         if self.match_terms:
-            content = content.lower()
-            if not any(x.tolower() in content for x in self.match_terms):
+            if not any(x.lower() in content for x in self.match_terms):
+                return False
+        if self.reject_terms:
+            if any(x.lower() in content for x in self.reject_terms):
                 return False
         if self.account_filter:
             if self.account_filter.lower() not in account_name.lower():
@@ -49,7 +53,11 @@ class AdQueryFilters:
         return True
 
     def to_json(self) -> Dict[str, Any]:
-        return dict(matchTerms=self.match_terms, accountFilter=self.account_filter)
+        return dict(
+            matchTerms=self.match_terms,
+            rejectTerms=self.reject_terms,
+            accountFilter=self.account_filter,
+        )
 
     @classmethod
     def from_json(cls, doc: Any) -> "AdQueryFilters":
@@ -64,12 +72,22 @@ class AdQueryFilters:
                     and all(isinstance(x, str) for x in mt)
                 ):
                     raise FilterDecodeError("invalid type for match terms")
+        elif "rejectTerms" in doc:
+            rt = doc["rejectTerms"]
+            if rt is not None:
+                if not (
+                    isinstance(mt, list)
+                    and len(mt)
+                    and all(isinstance(x, str) for x in mt)
+                ):
+                    raise FilterDecodeError("invalid type for reject terms")
         if "accountFilter" in doc:
             af = doc["accountFilter"]
             if not (af is None or isinstance(af, str)):
                 raise FilterDecodeError("invalid type for account filter")
         return cls(
             match_terms=doc.get("matchTerms"),
+            reject_terms=doc.get("rejectTerms"),
             account_filter=doc.get("accountFilter"),
         )
 
