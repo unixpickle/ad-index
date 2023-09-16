@@ -19,6 +19,7 @@ from typing import (
 )
 
 import aiosqlite
+from jsonschema import validate
 
 R = TypeVar("R")
 
@@ -26,10 +27,6 @@ MAX_NOTIFY_CHARS = 128  # don't send big push notifications
 
 
 class DataArgumentError(Exception):
-    pass
-
-
-class FilterDecodeError(Exception):
     pass
 
 
@@ -61,30 +58,25 @@ class AdQueryFilters:
 
     @classmethod
     def from_json(cls, doc: Any) -> "AdQueryFilters":
-        if not isinstance(doc, dict):
-            raise FilterDecodeError("invalid type of filter object")
-        if "matchTerms" in doc:
-            mt = doc["matchTerms"]
-            if mt is not None:
-                if not (
-                    isinstance(mt, list)
-                    and len(mt)
-                    and all(isinstance(x, str) for x in mt)
-                ):
-                    raise FilterDecodeError("invalid type for match terms")
-        elif "rejectTerms" in doc:
-            rt = doc["rejectTerms"]
-            if rt is not None:
-                if not (
-                    isinstance(mt, list)
-                    and len(mt)
-                    and all(isinstance(x, str) for x in mt)
-                ):
-                    raise FilterDecodeError("invalid type for reject terms")
-        if "accountFilter" in doc:
-            af = doc["accountFilter"]
-            if not (af is None or isinstance(af, str)):
-                raise FilterDecodeError("invalid type for account filter")
+        schema = {
+            "type": "object",
+            "properties": {
+                "matchTerms": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "array", "items": {"type": "string"}},
+                    ],
+                },
+                "rejectTerms": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "array", "items": {"type": "string"}},
+                    ],
+                },
+                "accountFilter": {"anyOf": [{"type": "null"}, {"type": "string"}]},
+            },
+        }
+        validate(instance=doc, schema=schema)
         return cls(
             match_terms=doc.get("matchTerms"),
             reject_terms=doc.get("rejectTerms"),

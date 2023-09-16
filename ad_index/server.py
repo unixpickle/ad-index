@@ -9,18 +9,13 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from aiohttp import web
 from aiohttp.web import Request, UrlDispatcher
 from cryptography.hazmat.primitives import serialization
+from jsonschema import validate
+from jsonschema.exceptions import ValidationError
 from py_vapid import Vapid
 from py_vapid.utils import b64urlencode
 
 from .client import Client
-from .db import (
-    DB,
-    AdQuery,
-    AdQueryFilters,
-    AdQueryResult,
-    FilterDecodeError,
-    hash_session_id,
-)
+from .db import DB, AdQuery, AdQueryFilters, AdQueryResult, hash_session_id
 from .notifier import Notifier
 
 logger = logging.getLogger(__name__)
@@ -150,17 +145,23 @@ class Server:
             try:
                 obj = json.loads(push_sub)
                 if obj is not None:
-                    if not isinstance(obj["endpoint"], str):
-                        raise APIError("bad endpoint field")
-                    if not isinstance(obj["keys"], dict):
-                        raise APIError("bad keys field")
-                    if not isinstance(obj["keys"]["auth"], str):
-                        raise APIError("bad keys/auth field")
-                    if not isinstance(obj["keys"]["p256dh"], str):
-                        raise APIError("bad keys/p256dh field")
-            except KeyError as exc:
-                raise APIError(f"missing key in push_sub: {str(exc)}")
-            except json.JSONDecodeError as exc:
+                    schema = {
+                        "type": "object",
+                        "properties": {
+                            "endpoint": {"type": "string"},
+                            "keys": {
+                                "type": "object",
+                                "keys": {
+                                    "auth": {"type": "string"},
+                                    "p256dh": {"type": "string"},
+                                },
+                                "required": ["auth", "p256dh"],
+                            },
+                        },
+                        "required": ["endpoint", "keys"],
+                    }
+                    validate(instance=obj, schema=schema)
+            except (json.JSONDecodeError, ValidationError) as exc:
                 raise APIError(f"push_sub is not valid JSON: {str(exc)}")
         found = await self.db.update_client_push_sub(
             session_id=session_id, push_sub=push_sub
@@ -373,13 +374,15 @@ def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQuery
         query = request.query.getone("query")
         filters = AdQueryFilters.from_json(json.loads(request.query.getone("filters")))
         subscribed = json.loads(request.query.getone("subscribed"))
+        if not isinstance(subscribed, bool):
+            raise APIError("subscribed must be a boolean")
         if update:
             ad_query_id = int(request.query.getone("ad_query_id"))
         else:
             ad_query_id = None
     except KeyError as exc:
         raise APIError(f"argument not found: {exc}")
-    except (json.JSONDecodeError, APIError, FilterDecodeError) as exc:
+    except (json.JSONDecodeError, APIError, ValidationError) as exc:
         raise APIError(f"failed to parse argument: {exc}")
     if not isinstance(subscribed, bool):
         raise APIError("subscribed must be true or false")
