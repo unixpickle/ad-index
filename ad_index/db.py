@@ -767,6 +767,29 @@ class DB:
         return True
 
     @transaction
+    async def clear_ads(self, ad_query_id: int) -> bool:
+        (count,) = await self._fetchone(
+            "SELECT COUNT(*) FROM ad_queries WHERE ad_query_id=?", (ad_query_id,)
+        )
+        if count == 0:
+            return False
+        await self._conn.execute(
+            "DELETE FROM ad_content WHERE ad_query_id=?", (ad_query_id,)
+        )
+        await self._conn.execute(
+            "DELETE FROM ad_content_text WHERE ad_query_id=?", (ad_query_id,)
+        )
+        await self._conn.execute(
+            """
+            UPDATE ad_queries
+            SET last_notify=NULL, last_error=NULL, next_pull=STRFTIME('%s')
+            WHERE ad_query_id=?
+            """,
+            (ad_query_id,),
+        )
+        return True
+
+    @transaction
     async def cleanup_ads(self, max_ads: int, text_expiration: int):
         large_queries = await self._conn.execute_fetchall(
             """

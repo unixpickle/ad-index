@@ -99,6 +99,7 @@ class Server:
         router.add_get("/api/get_ad_query_status", self.api_get_ad_query_status)
         router.add_get("/api/insert_ad_query", self.api_insert_ad_query)
         router.add_get("/api/update_ad_query", self.api_update_ad_query)
+        router.add_get("/api/clear_ad_query", self.api_clear_ad_query)
         router.add_get("/api/delete_ad_query", self.api_delete_ad_query)
         router.add_get("/api/list_ad_content", self.api_list_ad_content)
         router.add_get("/screenshot", self.ad_content_screenshot)
@@ -221,20 +222,22 @@ class Server:
     @rewrite_db_errors
     async def api_update_ad_query(self, request: Request) -> Dict[str, Any]:
         session_id, ad_query = parse_ad_query_request(request, update=True)
+        return await self.db.update_ad_query(ad_query, session_id)
+
+    @api_method
+    async def api_clear_ad_query(self, request: Request) -> bool:
         try:
-            return await self.db.update_ad_query(ad_query, session_id)
-        except sqlite3.IntegrityError as exc:
-            # "UNIQUE constraint failed: ad_queries.nickname"
-            if "UNIQUE" in str(exc) and "nickname" in str(exc):
-                raise APIError("nickname is not unique")
-            raise
+            ad_query_id = int(request.query.getone("ad_query_id"))
+        except (ValueError, KeyError):
+            raise APIError("invalid or missing ad_query_id argument")
+        return await self.db.clear_ads(ad_query_id)
 
     @api_method
     async def api_delete_ad_query(self, request: Request) -> bool:
         try:
             ad_query_id = int(request.query.getone("ad_query_id"))
-        except ValueError:
-            raise APIError("invalid ad_query_id argument")
+        except (ValueError, KeyError):
+            raise APIError("invalid or missing ad_query_id argument")
         return await self.db.delete_ad_query(ad_query_id)
 
     @api_method
@@ -382,7 +385,7 @@ def parse_ad_query_request(request: Request, update: bool) -> Tuple[str, AdQuery
             ad_query_id = None
     except KeyError as exc:
         raise APIError(f"argument not found: {exc}")
-    except (json.JSONDecodeError, APIError, ValidationError) as exc:
+    except (json.JSONDecodeError, APIError, ValidationError, ValueError) as exc:
         raise APIError(f"failed to parse argument: {exc}")
     if not isinstance(subscribed, bool):
         raise APIError("subscribed must be true or false")
