@@ -4,6 +4,7 @@ setup(
     name="ad-index",
     packages=["ad_index"],
     install_requires=[
+        "Pillow==9.0",
         "aiohttp==3.8",
         "aiosqlite==0.19",
         "cryptography==3.4",

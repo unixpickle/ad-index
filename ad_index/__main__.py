@@ -25,6 +25,7 @@ async def main():
     parser.add_argument("--min-notify-interval", type=int, default=60 * 5)
     parser.add_argument("--max-ad-history", type=int, default=50)
     parser.add_argument("--session-expiration", type=int, default=60 * 60 * 24 * 120)
+    parser.add_argument("--use-firefox", action="store_true")
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
@@ -32,7 +33,7 @@ async def main():
     logging.basicConfig(level=logging.INFO)
 
     async with DB.connect(args.db) as db:
-        async with Client.create() as client:
+        async with Client.create(use_firefox=args.use_firefox) as client:
             server = Server(
                 asset_dir=args.asset_dir,
                 db=db,

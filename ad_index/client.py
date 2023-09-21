@@ -43,8 +43,13 @@ class Client:
 
     @classmethod
     @asynccontextmanager
-    async def create(cls) -> "Client":
-        driver = webdriver.Firefox()
+    async def create(cls, use_firefox: bool = False) -> "Client":
+        if use_firefox:
+            driver = webdriver.Firefox()
+        else:
+            options = webdriver.ChromeOptions()
+            options.add_argument("--headless")
+            driver = webdriver.Chrome(options)
         client = Client(driver)
         try:
             yield client
