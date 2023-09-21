@@ -20,6 +20,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 
 START_PAGE = "https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=US&sort_data[direction]=desc&sort_data[mode]=relevancy_monthly_grouped&media_type=all"
 RETRIES = 5
+ID_FIELD = "Library ID: "
 
 
 @dataclass
@@ -80,7 +81,7 @@ class Client:
             return {}
         main_elem_query = (
             "//*["
-            + " or ".join(f"text()='ID: {id}'" for id in ids)
+            + " or ".join(f"text()='{ID_FIELD}{id}'" for id in ids)
             + "]/../../../../../../.."
         )
         img_query = main_elem_query + "//img"
@@ -100,9 +101,9 @@ class Client:
         images = {}
         for main_elem in self.driver.find_elements(by=By.XPATH, value=main_elem_query):
             id_item = main_elem.find_element(
-                by=By.XPATH, value=".//*[starts-with(text(), 'ID: ')]"
+                by=By.XPATH, value=f".//*[starts-with(text(), '{ID_FIELD}')]"
             )
-            id = id_item.text.split(" ")[1]
+            id = id_item.text.split(" ")[-1]
             if id not in ids:
                 continue
             content = main_elem.find_element(
@@ -137,7 +138,7 @@ class Client:
     def _get_search_results(self) -> Optional[List[SearchResult]]:
         results = []
         for id_field in self.driver.find_elements(
-            by=By.XPATH, value="//*[starts-with(text(), 'ID: ')]"
+            by=By.XPATH, value=f"//*[starts-with(text(), '{ID_FIELD}')]"
         ):
             main_elem = id_field.find_element(by=By.XPATH, value="../../../../../../..")
             start_date = None

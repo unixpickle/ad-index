@@ -78,3 +78,14 @@
 .ad-list-status-item-contents-empty {
     color: #777;
 }
+
+.ad-list-status-clear-field {
+    display: table-row;
+    text-align: center;
+    column-count: 1;
+}
+
+.ad-list-status-clear-field>button {
+    display: table-column;
+    column-span: all;
+}

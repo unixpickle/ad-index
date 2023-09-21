@@ -5,6 +5,9 @@ class AdList {
     private statusLastPull: StatusField
     private statusLastNotify: StatusField
     private statusLastError: StatusField
+    private clearField: HTMLDivElement
+    private clearButtonContainer: HTMLTableCellElement
+    private clearButton: HTMLButtonElement
     private items: HTMLDivElement
     private loader: Loader
 
@@ -22,6 +25,16 @@ class AdList {
         this.status.appendChild(this.statusLastPull.element)
         this.status.appendChild(this.statusLastNotify.element)
         this.status.appendChild(this.statusLastError.element)
+        this.clearField = document.createElement('div')
+        this.clearField.setAttribute('class', 'ad-list-status-clear-field')
+        this.clearButtonContainer = document.createElement('td')
+        this.clearButtonContainer.setAttribute('colspan', '2')
+        this.clearButton = document.createElement('button')
+        this.clearButton.textContent = 'Clear'
+        this.clearButton.addEventListener('click', () => this.clear())
+        this.clearButtonContainer.appendChild(this.clearButton)
+        this.clearField.appendChild(this.clearButtonContainer)
+        this.status.appendChild(this.clearField)
 
         this.items = document.createElement('div')
         this.items.setAttribute('class', 'ad-list-items')
@@ -55,6 +68,18 @@ class AdList {
         }
         this.element.appendChild(this.items)
         this.showList(content)
+    }
+
+    public async clear() {
+        this.items.replaceChildren(this.loader.element)
+        this.element.replaceChildren(this.items)
+        try {
+            await clearAdQuery(this.adQueryId)
+        } catch (e) {
+            this.showError(e.toString())
+            return
+        }
+        await this.reload()
     }
 
     private showError(e: string) {

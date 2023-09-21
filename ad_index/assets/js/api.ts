@@ -114,6 +114,11 @@ async function updateAdQuery(sessionId: string, info: AdQueryResult) {
     return extractSuccess(await (await fetch(uri)).json())
 }
 
+async function clearAdQuery(adQueryId: string) {
+    const uri = `api/clear_ad_query?ad_query_id=${encodeURIComponent(adQueryId)}`
+    return extractSuccess(await (await fetch(uri)).json())
+}
+
 async function deleteAdQuery(adQueryId: string) {
     const uri = `/api/delete_ad_query?ad_query_id=${encodeURIComponent(adQueryId)}`
     return extractSuccess(await (await fetch(uri)).json())
